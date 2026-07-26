@@ -1,0 +1,6 @@
+{
+  "name": "MARCO Explorer - Totem Táctil",
+  "description": "Plataforma táctil vertical 1080x1920 para tótems y pantallas industriales. Captura local de datos, catálogo interactivo de brochures PDF y asignación de especialistas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
