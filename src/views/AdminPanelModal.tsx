@@ -21,7 +21,9 @@ import {
   CheckCircle,
   Clock,
   Keyboard,
-  Smartphone
+  Smartphone,
+  Upload,
+  Save
 } from 'lucide-react';
 
 interface AdminPanelModalProps {
@@ -31,6 +33,7 @@ interface AdminPanelModalProps {
   settings: KioskSettings;
   onClose: () => void;
   onRefreshLeads: () => void;
+  onCatalogChange: (categories: Category[], brochures: Brochure[]) => void;
   onUpdateSettings: (newSettings: Partial<KioskSettings>) => void;
 }
 
@@ -41,10 +44,14 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   settings,
   onClose,
   onRefreshLeads,
+  onCatalogChange,
   onUpdateSettings
 }) => {
   const [activeTab, setActiveTab] = useState<'leads' | 'content' | 'settings'>('leads');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingBrochure, setEditingBrochure] = useState<Brochure | null>(null);
+  const [contentError, setContentError] = useState('');
 
   const stats = getAdminStats();
 
@@ -57,10 +64,76 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     onRefreshLeads();
   };
 
+  const emptyCategory = (): Category => ({
+    id: `category-${Date.now()}`, code: '', title: '', subtitle: '', color: '#991b1b',
+    bgLight: '#fff7f7', bannerTitle: '', bannerDescription: '', applications: [''], brochureCount: 0, iconName: 'BookOpen'
+  });
+
+  const emptyBrochure = (): Brochure => ({
+    id: `brochure-${Date.now()}`, categoryId: categories[0]?.id || '', title: '', pages: 1,
+    yearOrType: 'PDF · Español', fileSize: '', description: '', pageImages: []
+  });
+
+  const updateCategoryField = (field: keyof Category, value: string | number | string[]) => {
+    setEditingCategory(current => current ? { ...current, [field]: value } : current);
+  };
+
+  const updateBrochureField = (field: keyof Brochure, value: string | number | string[]) => {
+    setEditingBrochure(current => current ? { ...current, [field]: value } : current);
+  };
+
+  const handlePdfUpload = (file?: File) => {
+    if (!file || !editingBrochure) return;
+    if (file.type !== 'application/pdf') {
+      setContentError('Selecciona un archivo PDF válido.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateBrochureField('pdfUrl', String(reader.result));
+      updateBrochureField('fileSize', `${(file.size / 1024 / 1024).toFixed(1)} MB`);
+      setContentError('');
+    };
+    reader.onerror = () => setContentError('No se pudo leer el PDF.');
+    reader.readAsDataURL(file);
+  };
+
+  const saveCategoryForm = () => {
+    if (!editingCategory?.title.trim()) return setContentError('La categoría necesita un nombre.');
+    const next = categories.some(item => item.id === editingCategory.id)
+      ? categories.map(item => item.id === editingCategory.id ? editingCategory : item)
+      : [...categories, editingCategory];
+    onCatalogChange(next, brochures);
+    setEditingCategory(null);
+    setContentError('');
+  };
+
+  const saveBrochureForm = () => {
+    if (!editingBrochure?.title.trim() || !editingBrochure.categoryId) {
+      return setContentError('El brochure necesita nombre y categoría.');
+    }
+    const next = brochures.some(item => item.id === editingBrochure.id)
+      ? brochures.map(item => item.id === editingBrochure.id ? editingBrochure : item)
+      : [...brochures, editingBrochure];
+    onCatalogChange(categories, next);
+    setEditingBrochure(null);
+    setContentError('');
+  };
+
+  const removeCategory = (id: string) => {
+    if (!window.confirm('¿Borrar esta categoría y sus brochures?')) return;
+    onCatalogChange(categories.filter(item => item.id !== id), brochures.filter(item => item.categoryId !== id));
+  };
+
+  const removeBrochure = (id: string) => {
+    if (!window.confirm('¿Borrar este brochure?')) return;
+    onCatalogChange(categories, brochures.filter(item => item.id !== id));
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden text-slate-100">
-        {/* Modal Header */}
+    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-in fade-in duration-200">
+      <div className="bg-slate-900 border-b border-slate-700 w-full h-full flex flex-col overflow-hidden text-slate-100">
+        {/* Admin Header */}
         <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-red-800 text-white flex items-center justify-center font-extrabold text-xl">
@@ -218,61 +291,56 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           )}
 
           {activeTab === 'content' && (
-            <div className="space-y-4">
-              <h3 className="font-bold text-lg text-white">Gestión de Contenidos (Wireframe Page 12)</h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-2">
-                  <h4 className="font-bold text-white flex items-center justify-between">
-                    <span>Agregar o reemplazar brochure</span>
-                    <Plus className="w-5 h-5 text-red-400" />
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Sube archivos PDF actualizados para que estén disponibles offline en la feria.
-                  </p>
-                  <button className="w-full mt-2 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs">
-                    Subir Nuevo Documento PDF
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-lg text-white">Catálogo offline</h3>
+                  <p className="text-xs text-slate-400">Los cambios y los PDF se guardan en este dispositivo.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setEditingCategory(emptyCategory()); setContentError(''); }} className="inline-flex items-center gap-2 px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg text-xs font-bold">
+                    <Plus className="w-4 h-4" /> Nueva categoría
+                  </button>
+                  <button type="button" onClick={() => { setEditingBrochure(emptyBrochure()); setContentError(''); }} className="inline-flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold">
+                    <Upload className="w-4 h-4" /> Nuevo PDF
                   </button>
                 </div>
+              </div>
 
-                <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-2">
-                  <h4 className="font-bold text-white flex items-center justify-between">
-                    <span>Editar categoría y descripción</span>
-                    <Edit2 className="w-5 h-5 text-red-400" />
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Modifica los textos descriptivos y aplicaciones de cada una de las 6 líneas.
-                  </p>
-                  <button className="w-full mt-2 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs">
-                    Editar Categorías
-                  </button>
-                </div>
+              {contentError && <p className="rounded-lg border border-red-700 bg-red-950/60 px-3 py-2 text-sm text-red-200">{contentError}</p>}
 
-                <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-2">
-                  <h4 className="font-bold text-white flex items-center justify-between">
-                    <span>Asignar responsable comercial</span>
-                    <Users className="w-5 h-5 text-red-400" />
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Asigna correos y teléfonos de especialistas para notificación interna.
-                  </p>
-                  <button className="w-full mt-2 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs">
-                    Configurar Especialistas
-                  </button>
+              {editingCategory && (
+                <div className="rounded-xl border border-red-700 bg-slate-800 p-4 space-y-3">
+                  <h4 className="font-bold text-white">{categories.some(item => item.id === editingCategory.id) ? 'Editar categoría' : 'Nueva categoría'}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <input value={editingCategory.title} onChange={e => updateCategoryField('title', e.target.value)} placeholder="Nombre de categoría" className="admin-input" />
+                    <input value={editingCategory.code} onChange={e => updateCategoryField('code', e.target.value)} placeholder="Código" className="admin-input" />
+                    <input value={editingCategory.subtitle} onChange={e => updateCategoryField('subtitle', e.target.value)} placeholder="Subtítulo" className="admin-input" />
+                    <input value={editingCategory.bannerTitle} onChange={e => updateCategoryField('bannerTitle', e.target.value)} placeholder="Título del banner" className="admin-input" />
+                    <textarea value={editingCategory.bannerDescription} onChange={e => updateCategoryField('bannerDescription', e.target.value)} placeholder="Descripción" className="admin-input md:col-span-2 min-h-20" />
+                  </div>
+                  <div className="flex gap-2"><button type="button" onClick={saveCategoryForm} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 rounded-lg text-xs font-bold"><Save className="w-4 h-4" /> Guardar</button><button type="button" onClick={() => setEditingCategory(null)} className="px-4 py-2 bg-slate-700 rounded-lg text-xs font-bold">Cancelar</button></div>
                 </div>
+              )}
 
-                <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-2">
-                  <h4 className="font-bold text-white flex items-center justify-between">
-                    <span>Activar / Desactivar contenido</span>
-                    <CheckCircle className="w-5 h-5 text-red-400" />
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Oculta o muestra soluciones en tiempo real durante la feria.
-                  </p>
-                  <button className="w-full mt-2 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs">
-                    Gestionar Visibilidad
-                  </button>
+              {editingBrochure && (
+                <div className="rounded-xl border border-cyan-700 bg-slate-800 p-4 space-y-3">
+                  <h4 className="font-bold text-white">{brochures.some(item => item.id === editingBrochure.id) ? 'Editar brochure' : 'Nuevo brochure'}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <input value={editingBrochure.title} onChange={e => updateBrochureField('title', e.target.value)} placeholder="Título del PDF" className="admin-input" />
+                    <select value={editingBrochure.categoryId} onChange={e => updateBrochureField('categoryId', e.target.value)} className="admin-input"><option value="">Selecciona categoría</option>{categories.map(category => <option key={category.id} value={category.id}>{category.title}</option>)}</select>
+                    <input type="number" min="1" value={editingBrochure.pages} onChange={e => updateBrochureField('pages', Number(e.target.value))} placeholder="Páginas" className="admin-input" />
+                    <input value={editingBrochure.yearOrType} onChange={e => updateBrochureField('yearOrType', e.target.value)} placeholder="Tipo o año" className="admin-input" />
+                    <textarea value={editingBrochure.description} onChange={e => updateBrochureField('description', e.target.value)} placeholder="Descripción" className="admin-input md:col-span-2 min-h-20" />
+                    <label className="md:col-span-2 flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-600 bg-slate-900 px-3 py-3 text-sm text-slate-300 hover:border-cyan-500"><Upload className="w-5 h-5 text-cyan-400" /><span>{editingBrochure.pdfUrl ? `PDF cargado (${editingBrochure.fileSize || 'tamaño desconocido'})` : 'Seleccionar archivo PDF'}</span><input type="file" accept="application/pdf,.pdf" onChange={e => handlePdfUpload(e.target.files?.[0])} className="hidden" /></label>
+                  </div>
+                  <div className="flex gap-2"><button type="button" onClick={saveBrochureForm} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 rounded-lg text-xs font-bold"><Save className="w-4 h-4" /> Guardar PDF</button><button type="button" onClick={() => setEditingBrochure(null)} className="px-4 py-2 bg-slate-700 rounded-lg text-xs font-bold">Cancelar</button></div>
                 </div>
+              )}
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Categorías ({categories.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{categories.map(category => <div key={category.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div><p className="font-bold text-white">{category.title}</p><p className="text-xs text-slate-400">{category.code} · {brochures.filter(item => item.categoryId === category.id).length} PDF</p></div><div className="flex gap-1"><button type="button" title="Editar categoría" onClick={() => setEditingCategory({ ...category })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar categoría" onClick={() => removeCategory(category.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
+                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Brochures / PDF ({brochures.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{brochures.map(brochure => <div key={brochure.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div className="min-w-0"><p className="font-bold text-white truncate">{brochure.title}</p><p className="text-xs text-slate-400 truncate">{categories.find(item => item.id === brochure.categoryId)?.title || 'Sin categoría'} · {brochure.pdfUrl ? 'PDF cargado' : 'Sin PDF'}</p></div><div className="flex gap-1"><button type="button" title="Editar brochure" onClick={() => setEditingBrochure({ ...brochure })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar brochure" onClick={() => removeBrochure(brochure.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
               </div>
             </div>
           )}

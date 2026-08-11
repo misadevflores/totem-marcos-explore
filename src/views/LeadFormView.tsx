@@ -73,19 +73,19 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-slate-900 text-white overflow-y-auto">
+    <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto">
       {/* Title */}
       <div className="space-y-1 text-left">
-        <h2 className="text-3xl font-black text-white tracking-tight">
+        <h2 className="text-3xl font-black text-brand-700 tracking-tight">
           Déjanos tus datos
         </h2>
-        <p className="text-sm text-slate-300 font-medium">
+        <p className="text-sm text-brand-500 font-medium">
           Te enviaremos el brochure y un especialista podrá contactarte.
         </p>
       </div>
 
       {errorMsg && (
-        <div className="p-4 bg-red-950/90 border border-red-600 rounded-xl text-red-200 text-sm font-bold animate-shake">
+        <div className="p-4 bg-brand-700/90 border border-accent-600 rounded-xl text-white text-sm font-bold animate-shake">
           {errorMsg}
         </div>
       )}
@@ -94,8 +94,8 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
       <form onSubmit={handleSubmit} className="space-y-4 my-auto">
         {/* Nombre y apellido */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <User className="w-4 h-4 text-red-400" />
+          <label className="text-xs font-bold uppercase tracking-wider text-brand-500 flex items-center gap-1.5">
+            <User className="w-4 h-4 text-accent-600" />
             Nombre y apellido *
           </label>
           <input
@@ -105,14 +105,14 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
             onChange={(e) => setFullName(e.target.value)}
             onFocus={() => onActiveInputFocus?.('fullName')}
             placeholder="Ej. Carlos Mendoza"
-            className="w-full h-14 px-4 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-white font-medium text-base placeholder-slate-500 outline-none transition"
+            className="w-full h-14 px-4 bg-white border-2 border-marco-border focus:border-accent-500 rounded-xl text-brand-800 font-medium text-base placeholder-brand-300 outline-none transition"
           />
         </div>
 
         {/* Empresa */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <Building2 className="w-4 h-4 text-red-400" />
+          <label className="text-xs font-bold uppercase tracking-wider text-brand-500 flex items-center gap-1.5">
+            <Building2 className="w-4 h-4 text-accent-600" />
             Empresa *
           </label>
           <input
@@ -122,14 +122,14 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
             onChange={(e) => setCompany(e.target.value)}
             onFocus={() => onActiveInputFocus?.('company')}
             placeholder="Ej. Compañía Minera Andina"
-            className="w-full h-14 px-4 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-white font-medium text-base placeholder-slate-500 outline-none transition"
+            className="w-full h-14 px-4 bg-white border-2 border-marco-border focus:border-accent-500 rounded-xl text-brand-800 font-medium text-base placeholder-brand-300 outline-none transition"
           />
         </div>
 
         {/* Correo corporativo */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <Mail className="w-4 h-4 text-red-400" />
+          <label className="text-xs font-bold uppercase tracking-wider text-brand-500 flex items-center gap-1.5">
+            <Mail className="w-4 h-4 text-accent-600" />
             Correo corporativo *
           </label>
           <input
@@ -139,14 +139,14 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
             onChange={(e) => setEmail(e.target.value)}
             onFocus={() => onActiveInputFocus?.('email')}
             placeholder="nombre@empresa.com"
-            className="w-full h-14 px-4 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-white font-medium text-base placeholder-slate-500 outline-none transition"
+            className="w-full h-14 px-4 bg-white border-2 border-marco-border focus:border-accent-500 rounded-xl text-brand-800 font-medium text-base placeholder-brand-300 outline-none transition"
           />
         </div>
 
         {/* Teléfono / WhatsApp */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <Phone className="w-4 h-4 text-red-400" />
+          <label className="text-xs font-bold uppercase tracking-wider text-brand-500 flex items-center gap-1.5">
+            <Phone className="w-4 h-4 text-accent-600" />
             Teléfono / WhatsApp
           </label>
           <input
@@ -155,14 +155,14 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
             onChange={(e) => setPhone(e.target.value)}
             onFocus={() => onActiveInputFocus?.('phone')}
             placeholder="+51 999 999 999"
-            className="w-full h-14 px-4 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-white font-medium text-base placeholder-slate-500 outline-none transition"
+            className="w-full h-14 px-4 bg-white border-2 border-marco-border focus:border-accent-500 rounded-xl text-brand-800 font-medium text-base placeholder-brand-300 outline-none transition"
           />
         </div>
 
         {/* Cargo */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-            <Briefcase className="w-4 h-4 text-red-400" />
+          <label className="text-xs font-bold uppercase tracking-wider text-brand-500 flex items-center gap-1.5">
+            <Briefcase className="w-4 h-4 text-accent-600" />
             Cargo
           </label>
           <input
@@ -171,15 +171,15 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
             onChange={(e) => setPosition(e.target.value)}
             onFocus={() => onActiveInputFocus?.('position')}
             placeholder="Ej. Jefe de Mantenimiento / Superintendente"
-            className="w-full h-14 px-4 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-white font-medium text-base placeholder-slate-500 outline-none transition"
+            className="w-full h-14 px-4 bg-white border-2 border-marco-border focus:border-accent-500 rounded-xl text-brand-800 font-medium text-base placeholder-brand-300 outline-none transition"
           />
         </div>
 
         {/* Interés Detectado (Wireframe Page 8) */}
         <div className="space-y-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Interés detectado</span>
-          <div className="p-3.5 bg-red-950/50 border border-red-800/80 rounded-xl text-xs font-bold text-red-200 flex items-center gap-2">
-            <Info className="w-4 h-4 text-red-400 shrink-0" />
+          <span className="text-xs font-bold uppercase tracking-wider text-brand-400">Interés detectado</span>
+          <div className="p-3.5 bg-brand-100 border border-brand-200 rounded-xl text-xs font-bold text-brand-700 flex items-center gap-2">
+            <Info className="w-4 h-4 text-accent-600 shrink-0" />
             <span className="line-clamp-2">{detectedInterestText}</span>
           </div>
         </div>
@@ -190,11 +190,11 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
           className="flex items-center gap-3 pt-2 cursor-pointer select-none"
         >
           {authorizedTerms ? (
-            <CheckSquare className="w-6 h-6 text-red-500 shrink-0" />
+            <CheckSquare className="w-6 h-6 text-accent-600 shrink-0" />
           ) : (
-            <Square className="w-6 h-6 text-slate-500 shrink-0" />
+            <Square className="w-6 h-6 text-brand-300 shrink-0" />
           )}
-          <span className="text-xs text-slate-300 font-medium">
+          <span className="text-xs text-brand-500 font-medium">
             Autorizo el tratamiento de mis datos para fines comerciales y de contacto MARCO.
           </span>
         </div>
@@ -203,9 +203,9 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
         <div className="pt-2">
           <button
             type="submit"
-            className="w-full py-5 px-6 min-h-[76px] bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-extrabold text-xl tracking-wider rounded-xl border border-red-600 flex items-center justify-center gap-3 transition shadow-xl"
+            className="w-full py-5 px-6 min-h-[76px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-xl tracking-wider rounded-xl border border-accent-300 flex items-center justify-center gap-3 transition shadow-xl"
           >
-            <Send className="w-6 h-6 text-red-200" />
+            <Send className="w-6 h-6 text-white" />
             <span>ENVIAR SOLICITUD</span>
           </button>
         </div>

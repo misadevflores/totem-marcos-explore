@@ -250,6 +250,24 @@ export function saveCategories(categories: Category[]): void {
   }
 }
 
+export function createCategory(category: Category): Category[] {
+  const categories = [...getStoredCategories(), category];
+  saveCategories(categories);
+  return categories;
+}
+
+export function updateCategory(category: Category): Category[] {
+  const categories = getStoredCategories().map(item => item.id === category.id ? category : item);
+  saveCategories(categories);
+  return categories;
+}
+
+export function deleteCategory(id: string): Category[] {
+  const categories = getStoredCategories().filter(item => item.id !== id);
+  saveCategories(categories);
+  return categories;
+}
+
 export function getStoredBrochures(): Brochure[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.BROCHURES);
@@ -257,7 +275,18 @@ export function getStoredBrochures(): Brochure[] {
       localStorage.setItem(STORAGE_KEYS.BROCHURES, JSON.stringify(INITIAL_BROCHURES));
       return INITIAL_BROCHURES;
     }
-    return JSON.parse(raw);
+    const storedBrochures: Brochure[] = JSON.parse(raw);
+    const brochures = storedBrochures.map(brochure => {
+      const initialBrochure = INITIAL_BROCHURES.find(item => item.id === brochure.id);
+      return brochure.pdfUrl || !initialBrochure?.pdfUrl
+        ? brochure
+        : { ...brochure, pdfUrl: initialBrochure.pdfUrl };
+    });
+
+    if (JSON.stringify(brochures) !== raw) {
+      saveBrochures(brochures);
+    }
+    return brochures;
   } catch {
     return INITIAL_BROCHURES;
   }
@@ -269,4 +298,22 @@ export function saveBrochures(brochures: Brochure[]): void {
   } catch (err) {
     console.error('Error saving brochures:', err);
   }
+}
+
+export function createBrochure(brochure: Brochure): Brochure[] {
+  const brochures = [...getStoredBrochures(), brochure];
+  saveBrochures(brochures);
+  return brochures;
+}
+
+export function updateBrochure(brochure: Brochure): Brochure[] {
+  const brochures = getStoredBrochures().map(item => item.id === brochure.id ? brochure : item);
+  saveBrochures(brochures);
+  return brochures;
+}
+
+export function deleteBrochure(id: string): Brochure[] {
+  const brochures = getStoredBrochures().filter(item => item.id !== id);
+  saveBrochures(brochures);
+  return brochures;
 }

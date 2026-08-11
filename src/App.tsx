@@ -8,7 +8,9 @@ import {
   recordBrochureView,
   recordNewSession,
   getStoredCategories,
-  getStoredBrochures
+  getStoredBrochures,
+  saveCategories,
+  saveBrochures
 } from './utils/storage';
 
 import { TotemFrameContainer } from './components/TotemFrameContainer';
@@ -219,7 +221,7 @@ export default function App() {
           eventTitle={settings.eventTitle}
         />
       ) : (
-        <div className="flex-1 flex flex-col justify-between h-full bg-slate-900 text-white overflow-hidden relative">
+        <div className="flex-1 flex flex-col justify-between h-full bg-marco-bg text-brand-800 overflow-hidden relative">
           {/* Kiosk Header Bar */}
           <TotemHeader
             title={
@@ -374,6 +376,12 @@ export default function App() {
           settings={settings}
           onClose={() => setShowAdminModal(false)}
           onRefreshLeads={() => setLeads(getStoredLeads())}
+          onCatalogChange={(nextCategories, nextBrochures) => {
+            saveCategories(nextCategories);
+            saveBrochures(nextBrochures);
+            setCategories(nextCategories);
+            setBrochures(nextBrochures);
+          }}
           onUpdateSettings={updateSettingsHandler}
         />
       )}

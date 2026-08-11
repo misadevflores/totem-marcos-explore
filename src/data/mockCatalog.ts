@@ -1,4 +1,5 @@
 import { Category, Brochure, Specialist } from '../types';
+import brochureMultimarcaPdf from '../../assets/pdf/BROCHURE MULTIMARCA MARCO.pdf';
 
 export const INITIAL_CATEGORIES: Category[] = [
   {
@@ -274,6 +275,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     id: 'b-mm-1',
     categoryId: 'brochure-multimarca',
     title: 'Catálogo General Representadas MARCO 2026',
+    pdfUrl: brochureMultimarcaPdf,
     pages: 40,
     yearOrType: 'Visión General de Negocios',
     fileSize: '9.8 MB',

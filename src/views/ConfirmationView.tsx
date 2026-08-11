@@ -50,10 +50,10 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
     : 'https://marco.com.pe/expomina2026';
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-slate-900 text-white overflow-y-auto text-center">
+    <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto text-center">
       {/* Header Badge */}
-      <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-950/80 border border-emerald-600/80 rounded-full text-xs font-bold text-emerald-300 mx-auto">
-        <Check className="w-4 h-4 text-emerald-400" />
+      <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-100 border border-emerald-300 rounded-full text-xs font-bold text-emerald-700 mx-auto">
+        <Check className="w-4 h-4 text-emerald-600" />
         <span>Solicitud Registrada Exitosamente</span>
       </div>
 
@@ -64,23 +64,23 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <Check className="w-14 h-14 stroke-[3]" />
         </div>
 
-        <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight uppercase">
+        <h2 className="text-3xl md:text-4xl font-black text-brand-700 tracking-tight uppercase">
           ¡Gracias por visitarnos!
         </h2>
 
-        <p className="text-base text-slate-300 font-medium leading-relaxed">
-          Registramos tu interés en <strong className="text-white">{lead?.categoryName || 'Soluciones MARCO'}</strong>.
+        <p className="text-base text-brand-500 font-medium leading-relaxed">
+          Registramos tu interés en <strong className="text-brand-700">{lead?.categoryName || 'Soluciones MARCO'}</strong>.
           Un especialista de MARCO se pondrá en contacto a la brevedad.
         </p>
 
         {/* QR Code Container (Wireframe Page 11) */}
-        <div className="bg-white p-5 rounded-2xl shadow-2xl border-4 border-slate-800 max-w-[240px] mx-auto space-y-2 mt-4">
+        <div className="bg-white p-5 rounded-2xl shadow-2xl border-4 border-brand-600 max-w-[240px] mx-auto space-y-2 mt-4">
           {/* Simulated High Definition SVG QR Code */}
-          <div className="aspect-square bg-slate-900 p-3 rounded-xl flex items-center justify-center text-white relative group">
+          <div className="aspect-square bg-brand-800 p-3 rounded-xl flex items-center justify-center text-white relative group">
             <QrCode className="w-full h-full text-white" />
-            <div className="absolute inset-0 bg-red-900/10 rounded-xl pointer-events-none"></div>
+            <div className="absolute inset-0 bg-accent-500/10 rounded-xl pointer-events-none"></div>
           </div>
-          <p className="text-xs font-bold text-slate-800 tracking-tight leading-tight">
+          <p className="text-xs font-bold text-brand-700 tracking-tight leading-tight">
             Escanea para abrir o descargar el brochure en tu móvil
           </p>
         </div>
@@ -92,7 +92,7 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <button
             type="button"
             onClick={onExploreMore}
-            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-100 font-bold text-base tracking-wide rounded-xl border border-slate-600 transition shadow"
+            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-white hover:bg-marco-bg active:bg-white text-brand-700 font-bold text-base tracking-wide rounded-xl border-2 border-marco-border hover:border-brand-300 transition shadow"
           >
             EXPLORAR OTRA SOLUCIÓN
           </button>
@@ -100,14 +100,14 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <button
             type="button"
             onClick={onFinish}
-            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-extrabold text-base tracking-wider rounded-xl border border-red-600 transition shadow-lg"
+            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-base tracking-wider rounded-xl border border-accent-300 transition shadow-lg"
           >
             FINALIZAR
           </button>
         </div>
 
-        <p className="text-xs text-slate-400 font-mono flex items-center justify-center gap-1.5 pt-1">
-          <RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin" />
+        <p className="text-xs text-brand-400 font-mono flex items-center justify-center gap-1.5 pt-1">
+          <RefreshCw className="w-3.5 h-3.5 text-accent-600 animate-spin" />
           <span>Regreso automático al inicio en {timeLeft} segundos.</span>
         </p>
       </div>
