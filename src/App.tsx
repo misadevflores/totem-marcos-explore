@@ -27,6 +27,7 @@ import { NotFoundRouteView } from './views/NotFoundRouteView';
 import { SpecialistRouteView } from './views/SpecialistRouteView';
 import { ConfirmationView } from './views/ConfirmationView';
 import { AdminPanelModal } from './views/AdminPanelModal';
+import { AdminAuthModal } from './components/AdminAuthModal';
 
 type ViewState =
   | 'attraction'
@@ -58,6 +59,8 @@ export default function App() {
   const [showPdfModal, setShowPdfModal] = useState<boolean>(false);
   const [activePdfBrochure, setActivePdfBrochure] = useState<Brochure | null>(null);
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [showAdminAuth, setShowAdminAuth] = useState<boolean>(false);
+  const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(false);
   const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState<boolean>(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
@@ -206,11 +209,24 @@ export default function App() {
     setSettings(updated);
   };
 
+  const openAdmin = () => {
+    if (adminAuthenticated) {
+      setShowAdminModal(true);
+      return;
+    }
+    setShowAdminAuth(true);
+  };
+
+  const closeAdmin = () => {
+    setShowAdminModal(false);
+    setAdminAuthenticated(false);
+  };
+
   return (
     <TotemFrameContainer
       settings={settings}
       onUpdateSettings={updateSettingsHandler}
-      onOpenAdmin={() => setShowAdminModal(true)}
+      onOpenAdmin={openAdmin}
       onResetSession={resetToAttraction}
     >
       {/* Attraction Screen (Idle) */}
@@ -245,7 +261,7 @@ export default function App() {
               else setViewState('categories');
             }}
             onHome={resetToAttraction}
-            onOpenAdmin={() => setShowAdminModal(true)}
+            onOpenAdmin={openAdmin}
             idleTimeRemaining={idleTimeRemaining}
           />
 
@@ -368,13 +384,24 @@ export default function App() {
       )}
 
       {/* Admin Panel Modal */}
+      {showAdminAuth && (
+        <AdminAuthModal
+          onClose={() => setShowAdminAuth(false)}
+          onSuccess={() => {
+            setShowAdminAuth(false);
+            setAdminAuthenticated(true);
+            setShowAdminModal(true);
+          }}
+        />
+      )}
+
       {showAdminModal && (
         <AdminPanelModal
           leads={leads}
           categories={categories}
           brochures={brochures}
           settings={settings}
-          onClose={() => setShowAdminModal(false)}
+          onClose={closeAdmin}
           onRefreshLeads={() => setLeads(getStoredLeads())}
           onCatalogChange={(nextCategories, nextBrochures) => {
             saveCategories(nextCategories);
