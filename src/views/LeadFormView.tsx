@@ -203,7 +203,7 @@ export const LeadFormView: React.FC<LeadFormViewProps> = ({
         <div className="pt-2">
           <button
             type="submit"
-            className="w-full py-5 px-6 min-h-[76px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-xl tracking-wider rounded-xl border border-accent-300 flex items-center justify-center gap-3 transition shadow-xl"
+            className="w-full py-5 px-6 min-h-[76px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-xl tracking-wider rounded-xl border border-accent-300 flex items-center justify-center gap-3 transition shadow-xl touch-cta"
           >
             <Send className="w-6 h-6 text-white" />
             <span>ENVIAR SOLICITUD</span>

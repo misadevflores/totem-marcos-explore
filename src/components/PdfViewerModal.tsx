@@ -181,9 +181,26 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
             )}
             <span className="font-semibold">Página {currentPage} de {totalPages}</span>
             {hasPdf && (
-              <a href={brochure.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-cyan-300 hover:bg-slate-700">
-                Abrir PDF <ExternalLink className="h-4 w-4" />
-              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  // Trigger download of bundled PDF (works for local module URLs)
+                  try {
+                    const link = document.createElement('a');
+                    link.href = brochure.pdfUrl as string;
+                    link.download = `${brochure.title}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                  } catch (e) {
+                    // Fallback: do nothing, PDF is still viewable inline via pdfjs
+                    console.error('No se pudo descargar el PDF localmente', e);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-cyan-300 hover:bg-slate-700"
+              >
+                Descargar PDF
+              </button>
             )}
           </div>
         </div>
@@ -220,7 +237,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
         <div className="grid grid-cols-2 items-stretch gap-2 md:gap-3 max-w-xl mx-auto">
           <button
             onClick={() => onSendToEmail(brochure)}
-            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[44px] bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-extrabold rounded-lg border border-red-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg"
+            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[88px] bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-extrabold rounded-lg border border-red-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg touch-cta"
           >
             <Mail className="w-4 h-4 shrink-0 text-red-200" />
             <span className="leading-tight">ENVIAR A MI CORREO</span>
@@ -228,7 +245,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
 
           <button
             onClick={() => onRequestSpecialist(brochure)}
-            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[44px] bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white font-bold rounded-lg border border-slate-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg"
+            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[88px] bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white font-bold rounded-lg border border-slate-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg touch-cta"
           >
             <UserCheck className="w-4 h-4 shrink-0 text-emerald-400" />
             <span className="leading-tight">QUIERO ASESORÍA</span>

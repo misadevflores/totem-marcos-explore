@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Category, Brochure, Lead, KioskSettings, Specialist } from './types';
 import {
+  initStorage,
   getKioskSettings,
   saveKioskSettings,
   getStoredLeads,
@@ -9,13 +10,14 @@ import {
   recordNewSession,
   getStoredCategories,
   getStoredBrochures,
+  getStoredSpecialists,
   saveCategories,
-  saveBrochures
+  saveBrochures,
+  storageEvents
 } from './utils/storage';
 
 import { TotemFrameContainer } from './components/TotemFrameContainer';
 import { TotemHeader } from './components/TotemHeader';
-import { VirtualKeyboard } from './components/VirtualKeyboard';
 import { PdfViewerModal } from './components/PdfViewerModal';
 
 import { AttractionScreen } from './views/AttractionScreen';
@@ -40,10 +42,13 @@ type ViewState =
   | 'confirmation';
 
 export default function App() {
+  const [storageReady, setStorageReady] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('attraction');
-  const [categories, setCategories] = useState<Category[]>(getStoredCategories());
-  const [brochures, setBrochures] = useState<Brochure[]>(getStoredBrochures());
-  const [leads, setLeads] = useState<Lead[]>(getStoredLeads());
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [brochures, setBrochures] = useState<Brochure[]>([]);
+  const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [settings, setSettings] = useState<KioskSettings>(getKioskSettings());
 
   // Navigation Context State
@@ -61,12 +66,59 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
   const [showAdminAuth, setShowAdminAuth] = useState<boolean>(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(false);
-  const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState<boolean>(false);
-  const [focusedInput, setFocusedInput] = useState<string | null>(null);
+  
 
   // Idle Timeout Countdown Logic
   const [idleTimeRemaining, setIdleTimeRemaining] = useState<number>(settings.idleTimeoutSeconds);
   const lastActivityRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    initStorage()
+      .then(() => {
+        setCategories(getStoredCategories());
+        setBrochures(getStoredBrochures());
+        setSpecialists(getStoredSpecialists());
+        setLeads(getStoredLeads());
+        setSettings(getKioskSettings());
+        setStorageReady(true);
+      })
+      .catch((err: Error) => {
+        setStorageError(err.message || 'No se pudo cargar totem-marco');
+      });
+  }, []);
+
+  // Listen to storage events so UI updates automatically when DB changes
+  useEffect(() => {
+    const onLeads = () => setLeads(getStoredLeads());
+    const onCats = () => setCategories(getStoredCategories());
+    const onBros = () => setBrochures(getStoredBrochures());
+    const onSpecs = () => setSpecialists(getStoredSpecialists());
+    const onSettings = () => setSettings(getKioskSettings());
+    const onReady = () => {
+      setCategories(getStoredCategories());
+      setBrochures(getStoredBrochures());
+      setSpecialists(getStoredSpecialists());
+      setLeads(getStoredLeads());
+      setSettings(getKioskSettings());
+      setStorageReady(true);
+    };
+
+    storageEvents.addEventListener('leadsChanged', onLeads);
+    storageEvents.addEventListener('categoriesChanged', onCats);
+    storageEvents.addEventListener('brochuresChanged', onBros);
+    storageEvents.addEventListener('specialistsChanged', onSpecs);
+    storageEvents.addEventListener('settingsChanged', onSettings);
+    storageEvents.addEventListener('storageReady', onReady);
+
+    return () => {
+      storageEvents.removeEventListener('leadsChanged', onLeads);
+      storageEvents.removeEventListener('categoriesChanged', onCats);
+      storageEvents.removeEventListener('brochuresChanged', onBros);
+      storageEvents.removeEventListener('specialistsChanged', onSpecs);
+      storageEvents.removeEventListener('settingsChanged', onSettings);
+      storageEvents.removeEventListener('storageReady', onReady);
+    };
+  }, []);
 
   const resetToAttraction = useCallback(() => {
     setViewState('attraction');
@@ -74,7 +126,6 @@ export default function App() {
     setSelectedBrochure(null);
     setSelectedSpecialist(null);
     setShowPdfModal(false);
-    setVirtualKeyboardVisible(false);
   }, []);
 
   const handleUserActivity = useCallback(() => {
@@ -154,55 +205,11 @@ export default function App() {
     const newLead = saveLead(leadData);
     setLeads(getStoredLeads());
     setSubmittedLead(newLead);
-    setVirtualKeyboardVisible(false);
     setViewState('confirmation');
   };
 
-  // Virtual keyboard key handlers
-  const handleVirtualKeyPress = (char: string) => {
-    handleUserActivity();
-    const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-      const start = activeEl.selectionStart || 0;
-      const end = activeEl.selectionEnd || 0;
-      const val = activeEl.value;
-      const newVal = val.substring(0, start) + char + val.substring(end);
-      activeEl.value = newVal;
-
-      // Dispatch input event for React state sync
-      const event = new Event('input', { bubbles: true });
-      activeEl.dispatchEvent(event);
-
-      activeEl.setSelectionRange(start + 1, start + 1);
-    }
-  };
-
-  const handleVirtualBackspace = () => {
-    handleUserActivity();
-    const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-      const start = activeEl.selectionStart || 0;
-      const end = activeEl.selectionEnd || 0;
-      const val = activeEl.value;
-      if (start > 0 || start !== end) {
-        const deletePos = start === end ? start - 1 : start;
-        const newVal = val.substring(0, deletePos) + val.substring(end);
-        activeEl.value = newVal;
-
-        const event = new Event('input', { bubbles: true });
-        activeEl.dispatchEvent(event);
-
-        activeEl.setSelectionRange(deletePos, deletePos);
-      }
-    }
-  };
-
-  const handleInputFocus = (fieldKey: string) => {
-    setFocusedInput(fieldKey);
-    if (settings.enableVirtualKeyboard) {
-      setVirtualKeyboardVisible(true);
-    }
-  };
+  // Virtual keyboard removed: input focus handling not required
+  const handleInputFocus = (_fieldKey: string) => {};
 
   const updateSettingsHandler = (newPartial: Partial<KioskSettings>) => {
     const updated = saveKioskSettings(newPartial);
@@ -221,6 +228,26 @@ export default function App() {
     setShowAdminModal(false);
     setAdminAuthenticated(false);
   };
+
+  if (!storageReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-marco-bg text-brand-800 p-8">
+        <div className="text-center space-y-3 max-w-md">
+          {storageError ? (
+            <>
+              <p className="text-xl font-bold text-red-700">Error cargando totem-marco</p>
+              <p className="text-sm text-brand-500">{storageError}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xl font-bold">Cargando totem-marco...</p>
+              <p className="text-sm text-brand-500">Sincronizando catálogo, leads y configuración.</p>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TotemFrameContainer
@@ -321,7 +348,7 @@ export default function App() {
                 specialistArea={selectedSpecialist?.title}
                 source={leadSource}
                 onSubmitLead={handleSubmitLead}
-                onActiveInputFocus={handleInputFocus}
+                
               />
             )}
 
@@ -334,12 +361,12 @@ export default function App() {
                   setLeadSource('No Encontró');
                   setViewState('lead_form');
                 }}
-                onActiveInputFocus={handleInputFocus}
               />
             )}
 
             {viewState === 'route_specialist' && (
               <SpecialistRouteView
+                specialists={specialists}
                 onSelectSpecialist={(spec) => {
                   handleUserActivity();
                   setSelectedSpecialist(spec);
@@ -362,13 +389,7 @@ export default function App() {
             )}
           </div>
 
-          {/* Touch Virtual Keyboard Overlay */}
-          <VirtualKeyboard
-            visible={virtualKeyboardVisible}
-            onKeyPress={handleVirtualKeyPress}
-            onBackspace={handleVirtualBackspace}
-            onClose={() => setVirtualKeyboardVisible(false)}
-          />
+          {/* Virtual keyboard removed for offline touch-only mode */}
         </div>
       )}
 

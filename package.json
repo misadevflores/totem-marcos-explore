@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "generate-sqlite": "node scripts/generate-sqlite.js"
+    ,"generate-sqlite-py": "python3 scripts/generate-sqlite.py"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -23,7 +25,8 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "sql.js": "^1.8.0"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

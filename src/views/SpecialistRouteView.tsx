@@ -1,18 +1,29 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Specialist } from '../types';
-import { INITIAL_SPECIALISTS } from '../data/mockCatalog';
-import { UserCheck, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { UserCheck, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface SpecialistRouteViewProps {
-  specialists?: Specialist[];
+  specialists: Specialist[];
   onSelectSpecialist: (specialist: Specialist) => void;
 }
 
 export const SpecialistRouteView: React.FC<SpecialistRouteViewProps> = ({
-  specialists = INITIAL_SPECIALISTS,
+  specialists,
   onSelectSpecialist
 }) => {
-  const [selectedSpec, setSelectedSpec] = useState<Specialist>(specialists[0]);
+  const [selectedSpec, setSelectedSpec] = useState<Specialist | null>(specialists[0] ?? null);
+
+  useEffect(() => {
+    setSelectedSpec(specialists[0] ?? null);
+  }, [specialists]);
+
+  if (!selectedSpec) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8 bg-marco-bg text-brand-500">
+        No hay especialistas configurados en totem-marco.
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto">

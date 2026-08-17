@@ -45,9 +45,8 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
     return () => clearInterval(interval);
   }, [onFinish]);
 
-  const qrTargetUrl = lead?.brochureId
-    ? `https://marco.com.pe/brochures/download/${lead.brochureId}`
-    : 'https://marco.com.pe/expomina2026';
+  // For offline kiosk, avoid external QR targets. Use local informative message.
+  const qrTargetUrl = lead?.brochureId ? `MARCO_TOTEM_BROCHURE:${lead.brochureId}` : 'MARCO_TOTEM';
 
   return (
     <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto text-center">
@@ -81,7 +80,7 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
             <div className="absolute inset-0 bg-accent-500/10 rounded-xl pointer-events-none"></div>
           </div>
           <p className="text-xs font-bold text-brand-700 tracking-tight leading-tight">
-            Escanea para abrir o descargar el brochure en tu móvil
+            Escanea para ver información del brochure en tu dispositivo (modo local)
           </p>
         </div>
       </div>
@@ -92,7 +91,7 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <button
             type="button"
             onClick={onExploreMore}
-            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-white hover:bg-marco-bg active:bg-white text-brand-700 font-bold text-base tracking-wide rounded-xl border-2 border-marco-border hover:border-brand-300 transition shadow"
+            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-white hover:bg-marco-bg active:bg-white text-brand-700 font-bold text-base tracking-wide rounded-xl border-2 border-marco-border hover:border-brand-300 transition shadow touch-cta"
           >
             EXPLORAR OTRA SOLUCIÓN
           </button>
@@ -100,7 +99,7 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <button
             type="button"
             onClick={onFinish}
-            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-base tracking-wider rounded-xl border border-accent-300 transition shadow-lg"
+            className="w-full sm:flex-1 py-4 px-5 min-h-[64px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-extrabold text-base tracking-wider rounded-xl border border-accent-300 transition shadow-lg touch-cta"
           >
             FINALIZAR
           </button>

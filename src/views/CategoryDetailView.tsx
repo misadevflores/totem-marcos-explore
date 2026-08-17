@@ -90,7 +90,7 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
         <button
           type="button"
           onClick={onViewBrochures}
-          className="w-full sm:flex-1 py-4 px-6 min-h-[72px] bg-brand-700 hover:bg-brand-600 active:bg-brand-800 text-white font-extrabold text-lg tracking-wider rounded-xl border border-brand-500 flex items-center justify-center gap-3 transition shadow-lg"
+          className="w-full sm:flex-1 py-4 px-6 min-h-[72px] bg-brand-700 hover:bg-brand-600 active:bg-brand-800 text-white font-extrabold text-lg tracking-wider rounded-xl border border-brand-500 flex items-center justify-center gap-3 transition shadow-lg touch-cta"
         >
           <span>VER BROCHURES</span>
         </button>
@@ -98,7 +98,7 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
         <button
           type="button"
           onClick={onRequestAdvice}
-          className="w-full sm:flex-1 py-4 px-6 min-h-[72px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-bold text-lg tracking-wider rounded-xl border border-accent-300 flex items-center justify-center gap-3 transition shadow"
+          className="w-full sm:flex-1 py-4 px-6 min-h-[72px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-bold text-lg tracking-wider rounded-xl border border-accent-300 flex items-center justify-center gap-3 transition shadow touch-cta"
         >
           <UserCheck className="w-6 h-6 text-white" />
           <span>SOLICITAR ASESORÍA</span>

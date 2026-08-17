@@ -70,7 +70,7 @@ export const BrochureLibraryView: React.FC<BrochureLibraryViewProps> = ({
         <button
           type="button"
           onClick={onSendAllToEmail}
-          className="w-full py-5 px-6 min-h-[76px] bg-brand-700 hover:bg-brand-600 active:bg-brand-800 text-white font-extrabold text-lg tracking-wider rounded-xl border border-brand-500 flex items-center justify-center gap-3 transition shadow-lg"
+          className="w-full py-5 px-6 min-h-[76px] bg-brand-700 hover:bg-brand-600 active:bg-brand-800 text-white font-extrabold text-lg tracking-wider rounded-xl border border-brand-500 flex items-center justify-center gap-3 transition shadow-lg touch-cta"
         >
           <Mail className="w-6 h-6 text-accent-400" />
           <span>ENVIAR TODOS A MI CORREO</span>

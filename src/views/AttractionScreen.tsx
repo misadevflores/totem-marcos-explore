@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Sparkles, ChevronRight, Cpu, Layers, ShieldCheck } from 'lucide-react';
 import marcoLogo from '../../assets/imgi_1_logo-marco-blanco.svg';
+import fondo1 from '../../assets/fondo/imgi_33_Apache-fondo.min.jpg';
+import fondo2 from '../../assets/fondo/imgi_35_Fondo-Marco-Lab.min.png';
+import fondo3 from '../../assets/fondo/imgi_36_Fondo-Marco-Peruana.min.png';
 
 interface AttractionScreenProps {
   onStart: () => void;
@@ -17,17 +20,17 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
 
   const backgroundSlides = [
     {
-      image: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80',
+      image: fondo1,
       tag: 'LUBRICACIÓN DE ALTO DESEMPEÑO',
       desc: 'Soluciones Bel-Ray para minería pesada y plantas concentradoras'
     },
     {
-      image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1200&q=80',
+      image: fondo2,
       tag: 'HERRAMIENTAS HIDRÁULICAS',
       desc: 'Sistemas Power Team de alta presión hasta 10,000 PSI'
     },
     {
-      image: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=1200&q=80',
+      image: fondo3,
       tag: 'FILTRACIÓN & DIAGNÓSTICO',
       desc: 'MARCO Lab y purificación Lube & Fuel en tiempo real'
     }
@@ -122,7 +125,7 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
               e.stopPropagation();
               onStart();
             }}
-            className="w-full max-w-md mx-auto py-5 px-8 min-h-[84px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-brand-900 font-extrabold text-2xl tracking-wider rounded-2xl border-2 border-accent-300 shadow-[0_10px_30px_rgba(0,180,230,0.5)] flex items-center justify-center gap-4 transition-all transform group-hover:scale-[1.02] active:scale-95"
+            className="w-full max-w-md mx-auto py-5 px-8 min-h-[84px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-brand-900 font-extrabold text-2xl tracking-wider rounded-2xl border-2 border-accent-300 shadow-[0_10px_30px_rgba(0,180,230,0.5)] flex items-center justify-center gap-4 transition-all transform group-hover:scale-[1.02] active:scale-95 touch-cta"
           >
             <Play className="w-8 h-8 fill-brand-900" />
             <span>EMPEZAR</span>

@@ -1,5 +1,6 @@
 import { Category, Brochure, Specialist } from '../types';
 import brochureMultimarcaPdf from '../../assets/pdf/BROCHURE MULTIMARCA MARCO.pdf';
+import pagePlaceholder from '../../assets/img/page-placeholder.svg';
 
 export const INITIAL_CATEGORIES: Category[] = [
   {
@@ -122,11 +123,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Actualizado 2026 · PDF · Español',
     fileSize: '4.2 MB',
     description: 'Catálogo general con soluciones de lubricación para maquinaria pesada de minería y plantas de procesamiento.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder, pagePlaceholder, pagePlaceholder]
   },
   {
     id: 'b-lu-2',
@@ -136,10 +133,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Edición 2026 · PDF · Español',
     fileSize: '6.8 MB',
     description: 'Guía especializada de grasas de alto rendimiento, fluidos sintéticos y lubricantes de engranajes abiertos.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder, pagePlaceholder]
   },
   {
     id: 'b-lu-3',
@@ -149,9 +143,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Ficha técnica de aplicación',
     fileSize: '2.1 MB',
     description: 'Manual de aplicación de lubricantes sintéticos no solventes para molinos de bolas y coronas operando a altas cargas.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
   {
     id: 'b-lu-4',
@@ -161,9 +153,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Aplicaciones severas e extrema presión',
     fileSize: '3.5 MB',
     description: 'Especificaciones de resistencia al lavado por agua, estabilidad al cizallamiento y bombeabilidad a bajas temperaturas.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
 
   // Herramientas Hidráulicas
@@ -175,9 +165,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Catálogo General 2026',
     fileSize: '8.4 MB',
     description: 'Cilindros de simple y doble efecto, bombas de alta presión, válvulas direccionales y accesorios de seguridad.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
   {
     id: 'b-hh-2',
@@ -187,9 +175,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Manual de Ajuste de Pernos',
     fileSize: '4.0 MB',
     description: 'Herramientas para embridados de alta precisión en tuberías críticas, intercambiadores y estructuras mineras.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
   {
     id: 'b-hh-3',
@@ -213,9 +199,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Guía de Selección de Aceros',
     fileSize: '5.1 MB',
     description: 'Manejo de abrasión en chancadoras primarias de quijadas, giratorias y chancadoras cónicas de alto tonelaje.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
   {
     id: 'b-tm-2',
@@ -239,9 +223,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Tecnología Micro-Glass 2026',
     fileSize: '4.5 MB',
     description: 'Purificación continua de combustible diésel y aceite hidráulico para prevenir desgaste en inyectores y bombas.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
   {
     id: 'b-fi-2',
@@ -251,9 +233,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Ficha Técnica Mantenimiento Proactivo',
     fileSize: '2.0 MB',
     description: 'Equipos móviles para acondicionamiento y limpieza de aceite en tanques en funcionamiento.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   },
 
   // MARCO Lab
@@ -280,9 +260,7 @@ export const INITIAL_BROCHURES: Brochure[] = [
     yearOrType: 'Visión General de Negocios',
     fileSize: '9.8 MB',
     description: 'Portafolio consolidado de marcas globales representadas, red de talleres y servicios de posventa.',
-    pageImages: [
-      'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80'
-    ]
+    pageImages: [pagePlaceholder]
   }
 ];
 

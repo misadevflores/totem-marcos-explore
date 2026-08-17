@@ -52,6 +52,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [editingBrochure, setEditingBrochure] = useState<Brochure | null>(null);
   const [contentError, setContentError] = useState('');
+  const [panelMessage, setPanelMessage] = useState<string | null>(null);
+
+  const showPanelMessage = (msg: string) => {
+    setPanelMessage(msg);
+    setTimeout(() => setPanelMessage(null), 3000);
+  };
 
   const stats = getAdminStats();
 
@@ -59,9 +65,31 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     exportLeadsToXLSX();
   };
 
+  const handleClearCache = async () => {
+    if (!window.confirm('¿Borrar caché del navegador y recargar para aplicar estilos?')) return;
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      const sep = window.location.search ? '&' : '?';
+      window.location.href = window.location.pathname + window.location.search + sep + 'cache_bust=' + Date.now();
+    } catch (err) {
+      console.error('Error limpiando caché', err);
+      alert('No se pudo borrar la caché. Revisa la consola.');
+    }
+  };
+
   const handleStatusChange = (leadId: string, status: 'Nuevo' | 'Asignado' | 'Contactado') => {
     updateLeadStatus(leadId, status);
     onRefreshLeads();
+    showPanelMessage('Editado y actualizado');
   };
 
   const emptyCategory = (): Category => ({
@@ -106,6 +134,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     onCatalogChange(next, brochures);
     setEditingCategory(null);
     setContentError('');
+    showPanelMessage('Editado y actualizado');
   };
 
   const saveBrochureForm = () => {
@@ -118,6 +147,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     onCatalogChange(categories, next);
     setEditingBrochure(null);
     setContentError('');
+    showPanelMessage('Editado y actualizado');
   };
 
   const removeCategory = (id: string) => {
@@ -154,6 +184,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
               <span>EXPORTAR XLSX</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearCache}
+              title="Borrar caché y recargar"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl border border-slate-600 transition"
+            >
+              <RefreshCw className="w-4 h-4 text-sky-300" />
+              <span>BORRAR CACHÉ</span>
             </button>
 
             <button
@@ -228,9 +268,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           {activeTab === 'leads' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-lg text-white">Leads Capturados en Local Storage</h3>
+                <h3 className="font-bold text-lg text-white">Leads Capturados en totem-marco</h3>
                 <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-3 py-1 rounded-full border border-emerald-800">
-                  Base de Datos Local Offline OK
+                  Base de Datos totem-marco OK
                 </span>
               </div>
 
@@ -374,28 +414,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </select>
                 </div>
 
-                {/* Virtual Keyboard Toggle */}
-                <div className="flex items-center justify-between border-b border-slate-700/80 pb-4">
-                  <div>
-                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                      <Keyboard className="w-4 h-4 text-red-400" />
-                      Teclado Táctil Virtual en Pantalla
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      Muestra teclado en pantalla al enfocar campos en pantalla táctil de 55"
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => onUpdateSettings({ enableVirtualKeyboard: !settings.enableVirtualKeyboard })}
-                    className={`px-4 py-2 font-bold text-xs rounded-xl border transition ${
-                      settings.enableVirtualKeyboard
-                        ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
-                        : 'bg-slate-900 text-slate-400 border-slate-700'
-                    }`}
-                  >
-                    {settings.enableVirtualKeyboard ? 'Activado' : 'Desactivado'}
-                  </button>
-                </div>
+                {/* Virtual keyboard removed from settings for kiosk.
+                    The feature is disabled by default and no longer configurable from UI. */}
 
                 {/* Frame Mode Toggle */}
                 <div className="flex items-center justify-between">

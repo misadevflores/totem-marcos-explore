@@ -55,10 +55,10 @@ export const TotemHeader: React.FC<TotemHeaderProps> = ({
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-3">
-          {/* Offline local storage indicator */}
+          {/* totem-marco database indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-marco-bg rounded-full border border-marco-border text-xs font-semibold text-brand-600">
             <Database className="w-3.5 h-3.5 text-accent-600" />
-            <span>Local Offline Safe</span>
+            <span>totem-marco</span>
           </div>
 
           {/* Idle Timeout warning if active */}

@@ -39,9 +39,10 @@
    so it never overflows on short / landscape screens.
    ============================================================ */
 .totem-frame {
+  /* Allow full 9:16 portrait sizing up to 1080px width for the totem hardware */
   height: min(100%, calc(100vh - 7rem));
-  width: auto;
-  max-width: 540px;
+  width: 100%;
+  max-width: 1080px;
   aspect-ratio: 9 / 16;
 }
 @media (max-width: 640px) {
@@ -61,4 +62,20 @@ html, body, #root {
 body {
   margin: 0;
 }
+
+/* Fallback utility classes mapped to CSS variables so branding works in WebView/offline */
+.bg-marco-bg { background-color: var(--color-marco-bg) !important; }
+.text-brand-800 { color: var(--color-brand-800) !important; }
+.bg-accent-500 { background-color: var(--color-accent-500) !important; }
+.border-marco-border { border-color: var(--color-marco-border) !important; }
+.text-brand-700 { color: var(--color-brand-700) !important; }
+.bg-brand-700 { background-color: var(--color-brand-700) !important; }
+.bg-brand-800 { background-color: var(--color-brand-800) !important; }
+.accent-500 { color: var(--color-accent-500) !important; }
+
+/* Touch-friendly default button sizes for totem */
+.touch-cta { min-height: 88px; padding-left: 20px; padding-right: 20px; font-size: 1.4rem; }
+
+/* Disable text selection globally for kiosk/touch */
+* { -webkit-user-select: none; -ms-user-select: none; user-select: none; }
 
