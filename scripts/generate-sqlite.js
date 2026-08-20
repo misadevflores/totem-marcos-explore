@@ -4,7 +4,7 @@ import fs from 'fs';
 import initSqlJs from 'sql.js';
 
 const SQL_FILE = 'sqlite.sql';
-const OUT_FILE = 'marco-data.sqlite';
+const OUT_FILE = 'public/totem.marco.sqlite';
 
 function fileExists(p) {
   try { return fs.existsSync(p); } catch { return false; }

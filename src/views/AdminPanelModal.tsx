@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Lead, KioskSettings, Category, Brochure } from '../types';
 import {
-  exportLeadsToXLSX,
+  exportLeadsToXLSX as exportLeadsToExcel,
   updateLeadStatus,
   getAdminStats,
   saveKioskSettings
 } from '../utils/storage';
+import { resetDb } from '../utils/db';
 import {
   FileSpreadsheet,
   X,
@@ -33,7 +34,7 @@ interface AdminPanelModalProps {
   settings: KioskSettings;
   onClose: () => void;
   onRefreshLeads: () => void;
-  onCatalogChange: (categories: Category[], brochures: Brochure[]) => void;
+  onCatalogChange: (categories: Category[], brochures: Brochure[]) => Promise<boolean>;
   onUpdateSettings: (newSettings: Partial<KioskSettings>) => void;
 }
 
@@ -56,18 +57,30 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const showPanelMessage = (msg: string) => {
     setPanelMessage(msg);
+    window.alert(msg);
     setTimeout(() => setPanelMessage(null), 3000);
   };
 
   const stats = getAdminStats();
 
   const handleExport = () => {
-    exportLeadsToXLSX();
+    try {
+      exportLeadsToExcel();
+    } catch (err) {
+      console.error('Error exportando leads:', err);
+      alert('No se pudo exportar los leads. Intenta nuevamente.');
+    }
   };
 
   const handleClearCache = async () => {
-    if (!window.confirm('¿Borrar caché del navegador y recargar para aplicar estilos?')) return;
+    if (!window.confirm(
+      '¿Resetear la base de datos al estado original?\n\nEsto borrará todos los cambios guardados (categorías, brochures editados, leads) y recargará desde el archivo base.\n\nEsta acción no se puede deshacer.'
+    )) return;
     try {
+      // 1. Borrar snapshot de IndexedDB → fuerza recargar desde public/totem-marco
+      await resetDb();
+
+      // 2. Limpiar caches del navegador
       if ('caches' in window) {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
@@ -78,18 +91,24 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map(r => r.unregister()));
       }
-      const sep = window.location.search ? '&' : '?';
-      window.location.href = window.location.pathname + window.location.search + sep + 'cache_bust=' + Date.now();
+
+      // 3. Recargar
+      window.location.reload();
     } catch (err) {
-      console.error('Error limpiando caché', err);
-      alert('No se pudo borrar la caché. Revisa la consola.');
+      console.error('Error reseteando DB:', err);
+      alert('No se pudo resetear la base de datos. Revisa la consola.');
     }
   };
 
   const handleStatusChange = (leadId: string, status: 'Nuevo' | 'Asignado' | 'Contactado') => {
-    updateLeadStatus(leadId, status);
-    onRefreshLeads();
-    showPanelMessage('Editado y actualizado');
+    try {
+      updateLeadStatus(leadId, status);
+      onRefreshLeads();
+      showPanelMessage('Estado actualizado correctamente');
+    } catch (err) {
+      console.error('Error actualizando estado del lead:', err);
+      showPanelMessage('Error al actualizar el estado. Intenta nuevamente.');
+    }
   };
 
   const emptyCategory = (): Category => ({
@@ -126,39 +145,54 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const saveCategoryForm = () => {
+  const saveCategoryForm = async () => {
     if (!editingCategory?.title.trim()) return setContentError('La categoría necesita un nombre.');
     const next = categories.some(item => item.id === editingCategory.id)
       ? categories.map(item => item.id === editingCategory.id ? editingCategory : item)
       : [...categories, editingCategory];
-    onCatalogChange(next, brochures);
+    const saved = await onCatalogChange(next, brochures);
     setEditingCategory(null);
     setContentError('');
-    showPanelMessage('Editado y actualizado');
+    if (saved) {
+      showPanelMessage('Guardado correctamente');
+    } else {
+      showPanelMessage('No se pudo guardar. Revisa la base de datos.');
+    }
   };
 
-  const saveBrochureForm = () => {
+  const saveBrochureForm = async () => {
     if (!editingBrochure?.title.trim() || !editingBrochure.categoryId) {
       return setContentError('El brochure necesita nombre y categoría.');
     }
     const next = brochures.some(item => item.id === editingBrochure.id)
       ? brochures.map(item => item.id === editingBrochure.id ? editingBrochure : item)
       : [...brochures, editingBrochure];
-    onCatalogChange(categories, next);
+    const saved = await onCatalogChange(categories, next);
     setEditingBrochure(null);
     setContentError('');
-    showPanelMessage('Editado y actualizado');
+    if (saved) {
+      showPanelMessage('Guardado correctamente');
+    } else {
+      showPanelMessage('No se pudo guardar. Revisa la base de datos.');
+    }
   };
 
-  const removeCategory = (id: string) => {
+  const removeCategory = async (id: string) => {
     if (!window.confirm('¿Borrar esta categoría y sus brochures?')) return;
-    onCatalogChange(categories.filter(item => item.id !== id), brochures.filter(item => item.categoryId !== id));
+    await onCatalogChange(
+      categories.filter(item => item.id !== id),
+      brochures.filter(item => item.categoryId !== id)
+    );
+    showPanelMessage('Categoría eliminada');
   };
 
-  const removeBrochure = (id: string) => {
+  const removeBrochure = async (id: string) => {
     if (!window.confirm('¿Borrar este brochure?')) return;
-    onCatalogChange(categories, brochures.filter(item => item.id !== id));
+    await onCatalogChange(categories, brochures.filter(item => item.id !== id));
+    showPanelMessage('Brochure eliminado');
   };
+
+  const panelInputClass = 'w-full rounded-xl border border-slate-600 bg-slate-950/70 px-3 py-2.5 text-sm text-white placeholder:text-slate-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 transition';
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col animate-in fade-in duration-200">
@@ -189,11 +223,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             <button
               type="button"
               onClick={handleClearCache}
-              title="Borrar caché y recargar"
-              className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl border border-slate-600 transition"
+              title="Resetear DB al estado original"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-red-900 text-white font-bold text-sm rounded-xl border border-slate-600 hover:border-red-700 transition"
             >
               <RefreshCw className="w-4 h-4 text-sky-300" />
-              <span>BORRAR CACHÉ</span>
+              <span>RESETEAR DB</span>
             </button>
 
             <button
@@ -264,6 +298,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         </div>
 
         {/* Tab Content Body */}
+        {panelMessage && (
+          <div className="mx-6 mt-4 rounded-xl border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-100 shadow-lg shadow-amber-950/20">
+            {panelMessage}
+          </div>
+        )}
+
         <div className="flex-1 p-6 overflow-y-auto space-y-4">
           {activeTab === 'leads' && (
             <div className="space-y-4">
@@ -350,31 +390,111 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               {contentError && <p className="rounded-lg border border-red-700 bg-red-950/60 px-3 py-2 text-sm text-red-200">{contentError}</p>}
 
               {editingCategory && (
-                <div className="rounded-xl border border-red-700 bg-slate-800 p-4 space-y-3">
-                  <h4 className="font-bold text-white">{categories.some(item => item.id === editingCategory.id) ? 'Editar categoría' : 'Nueva categoría'}</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input value={editingCategory.title} onChange={e => updateCategoryField('title', e.target.value)} placeholder="Nombre de categoría" className="admin-input" />
-                    <input value={editingCategory.code} onChange={e => updateCategoryField('code', e.target.value)} placeholder="Código" className="admin-input" />
-                    <input value={editingCategory.subtitle} onChange={e => updateCategoryField('subtitle', e.target.value)} placeholder="Subtítulo" className="admin-input" />
-                    <input value={editingCategory.bannerTitle} onChange={e => updateCategoryField('bannerTitle', e.target.value)} placeholder="Título del banner" className="admin-input" />
-                    <textarea value={editingCategory.bannerDescription} onChange={e => updateCategoryField('bannerDescription', e.target.value)} placeholder="Descripción" className="admin-input md:col-span-2 min-h-20" />
+                <div className="rounded-2xl border border-red-700/80 bg-slate-900/90 p-5 shadow-lg shadow-red-950/20">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="inline-flex items-center rounded-full border border-red-700/60 bg-red-950/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-red-200">
+                        Categoría
+                      </span>
+                      <h4 className="mt-2 text-lg font-bold text-white">
+                        {categories.some(item => item.id === editingCategory.id) ? 'Editar categoría' : 'Nueva categoría'}
+                      </h4>
+                    </div>
+                    <span className="rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      {categories.some(item => item.id === editingCategory.id) ? 'Editar' : 'Crear'}
+                    </span>
                   </div>
-                  <div className="flex gap-2"><button type="button" onClick={saveCategoryForm} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 rounded-lg text-xs font-bold"><Save className="w-4 h-4" /> Guardar</button><button type="button" onClick={() => setEditingCategory(null)} className="px-4 py-2 bg-slate-700 rounded-lg text-xs font-bold">Cancelar</button></div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Nombre</span>
+                      <input value={editingCategory.title} onChange={e => updateCategoryField('title', e.target.value)} placeholder="Nombre de categoría" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Código</span>
+                      <input value={editingCategory.code} onChange={e => updateCategoryField('code', e.target.value)} placeholder="Código" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Subtítulo</span>
+                      <input value={editingCategory.subtitle} onChange={e => updateCategoryField('subtitle', e.target.value)} placeholder="Subtítulo" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Título del banner</span>
+                      <input value={editingCategory.bannerTitle} onChange={e => updateCategoryField('bannerTitle', e.target.value)} placeholder="Título del banner" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Descripción</span>
+                      <textarea value={editingCategory.bannerDescription} onChange={e => updateCategoryField('bannerDescription', e.target.value)} placeholder="Descripción" className={`${panelInputClass} min-h-24 resize-y`} />
+                    </label>
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-end gap-2">
+                    <button type="button" onClick={() => setEditingCategory(null)} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-bold text-white transition">Cancelar</button>
+                    <button type="button" onClick={saveCategoryForm} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shadow-lg shadow-emerald-950/30 transition"><Save className="w-4 h-4" /> Guardar</button>
+                  </div>
                 </div>
               )}
 
               {editingBrochure && (
-                <div className="rounded-xl border border-cyan-700 bg-slate-800 p-4 space-y-3">
-                  <h4 className="font-bold text-white">{brochures.some(item => item.id === editingBrochure.id) ? 'Editar brochure' : 'Nuevo brochure'}</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input value={editingBrochure.title} onChange={e => updateBrochureField('title', e.target.value)} placeholder="Título del PDF" className="admin-input" />
-                    <select value={editingBrochure.categoryId} onChange={e => updateBrochureField('categoryId', e.target.value)} className="admin-input"><option value="">Selecciona categoría</option>{categories.map(category => <option key={category.id} value={category.id}>{category.title}</option>)}</select>
-                    <input type="number" min="1" value={editingBrochure.pages} onChange={e => updateBrochureField('pages', Number(e.target.value))} placeholder="Páginas" className="admin-input" />
-                    <input value={editingBrochure.yearOrType} onChange={e => updateBrochureField('yearOrType', e.target.value)} placeholder="Tipo o año" className="admin-input" />
-                    <textarea value={editingBrochure.description} onChange={e => updateBrochureField('description', e.target.value)} placeholder="Descripción" className="admin-input md:col-span-2 min-h-20" />
-                    <label className="md:col-span-2 flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-600 bg-slate-900 px-3 py-3 text-sm text-slate-300 hover:border-cyan-500"><Upload className="w-5 h-5 text-cyan-400" /><span>{editingBrochure.pdfUrl ? `PDF cargado (${editingBrochure.fileSize || 'tamaño desconocido'})` : 'Seleccionar archivo PDF'}</span><input type="file" accept="application/pdf,.pdf" onChange={e => handlePdfUpload(e.target.files?.[0])} className="hidden" /></label>
+                <div className="rounded-2xl border border-cyan-700/80 bg-slate-900/90 p-5 shadow-lg shadow-cyan-950/20">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="inline-flex items-center rounded-full border border-cyan-700/60 bg-cyan-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-200">
+                        Brochure / PDF
+                      </span>
+                      <h4 className="mt-2 text-lg font-bold text-white">
+                        {brochures.some(item => item.id === editingBrochure.id) ? 'Editar brochure' : 'Nuevo brochure'}
+                      </h4>
+                    </div>
+                    <span className="rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      {brochures.some(item => item.id === editingBrochure.id) ? 'Editar' : 'Crear'}
+                    </span>
                   </div>
-                  <div className="flex gap-2"><button type="button" onClick={saveBrochureForm} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 rounded-lg text-xs font-bold"><Save className="w-4 h-4" /> Guardar PDF</button><button type="button" onClick={() => setEditingBrochure(null)} className="px-4 py-2 bg-slate-700 rounded-lg text-xs font-bold">Cancelar</button></div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Título</span>
+                      <input value={editingBrochure.title} onChange={e => updateBrochureField('title', e.target.value)} placeholder="Título del PDF" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Categoría</span>
+                      <select value={editingBrochure.categoryId} onChange={e => updateBrochureField('categoryId', e.target.value)} className={panelInputClass}>
+                        <option value="">Selecciona categoría</option>
+                        {categories.map(category => <option key={category.id} value={category.id}>{category.title}</option>)}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Páginas</span>
+                      <input type="number" min="1" value={editingBrochure.pages} onChange={e => updateBrochureField('pages', Number(e.target.value))} placeholder="Páginas" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-1">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Tipo o año</span>
+                      <input value={editingBrochure.yearOrType} onChange={e => updateBrochureField('yearOrType', e.target.value)} placeholder="Tipo o año" className={panelInputClass} />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Descripción</span>
+                      <textarea value={editingBrochure.description} onChange={e => updateBrochureField('description', e.target.value)} placeholder="Descripción" className={`${panelInputClass} min-h-24 resize-y`} />
+                    </label>
+
+                    <label className="md:col-span-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-600 bg-slate-950/60 px-3 py-3 text-sm text-slate-300 transition hover:border-cyan-500 hover:bg-slate-950">
+                      <Upload className="w-5 h-5 text-cyan-400" />
+                      <span>{editingBrochure.pdfUrl ? `PDF cargado (${editingBrochure.fileSize || 'tamaño desconocido'})` : 'Seleccionar archivo PDF'}</span>
+                      <input type="file" accept="application/pdf,.pdf" onChange={e => handlePdfUpload(e.target.files?.[0])} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-end gap-2">
+                    <button type="button" onClick={() => setEditingBrochure(null)} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-bold text-white transition">Cancelar</button>
+                    <button type="button" onClick={saveBrochureForm} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shadow-lg shadow-emerald-950/30 transition"><Save className="w-4 h-4" /> Guardar PDF</button>
+                  </div>
                 </div>
               )}
 

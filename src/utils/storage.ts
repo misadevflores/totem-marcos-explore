@@ -1,8 +1,18 @@
+/**
+ * storage.ts
+ *
+ * Acceso a datos via servidor Express local (server.js + better-sqlite3).
+ * El archivo SQLite es public/totem-marco — visible en cualquier visualizador.
+ *
+ * Iniciar servidor: npm run server
+ * Iniciar frontend: npm run dev
+ */
+
 import * as XLSX from 'xlsx';
-import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
-import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { Lead, KioskSettings, AdminStats, Category, Brochure, Specialist } from '../types';
 import brochureMultimarcaPdf from '../../assets/pdf/BROCHURE MULTIMARCA MARCO.pdf';
+
+const API = 'http://localhost:3001/api';
 
 export const DEFAULT_SETTINGS: KioskSettings = {
   idleTimeoutSeconds: 35,
@@ -10,19 +20,18 @@ export const DEFAULT_SETTINGS: KioskSettings = {
   enableVirtualKeyboard: true,
   totemFrameMode: true,
   companyName: 'MARCO Peru',
-  eventTitle: 'Expomina 2026'
+  eventTitle: 'Expomina 2026',
 };
 
-const PDF_URL_FALLBACKS: Record<string, string> = {
-  'b-mm-1': brochureMultimarcaPdf
+const PDF_FALLBACKS: Record<string, string> = {
+  'b-mm-1': brochureMultimarcaPdf,
 };
 
-let SQL: SqlJsStatic | null = null;
-let db: Database | null = null;
+// ── Estado ─────────────────────────────────────────────────────────────────
+
 let storageReady = false;
 let initPromise: Promise<void> | null = null;
 
-// Event emitter for notifying UI about changes
 export const storageEvents = new EventTarget();
 
 let leadsCache: Lead[] = [];
@@ -31,669 +40,361 @@ let brochuresCache: Brochure[] = [];
 let specialistsCache: Specialist[] = [];
 let settingsCache: KioskSettings = DEFAULT_SETTINGS;
 let statsCache = { views: 0, sessions: 0 };
-const SQLITE_PERSIST_KEY = 'marco_totem_sqlite_snapshot';
 
-function arrayBufferToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
+// ── HTTP helpers ───────────────────────────────────────────────────────────
+
+async function query(sql: string): Promise<Record<string, unknown>[]> {
+  const res = await fetch(`${API}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  });
+  if (!res.ok) throw new Error(`Query error: ${res.statusText}`);
+  const json = await res.json();
+  return json.data ?? [];
 }
 
-function base64ToUint8Array(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+async function execute(sql: string): Promise<void> {
+  const res = await fetch(`${API}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  });
+  if (!res.ok) throw new Error(`Execute error: ${res.statusText}`);
 }
 
-function persistDbSnapshot(): void {
-  if (!db) return;
-  try {
-    const binary = db.export();
-    const base64 = arrayBufferToBase64(new Uint8Array(binary));
-    localStorage.setItem(SQLITE_PERSIST_KEY, base64);
-  } catch (err) {
-    console.warn('No se pudo guardar la base persistente en localStorage:', err);
-  }
+async function batch(statements: string[]): Promise<void> {
+  const res = await fetch(`${API}/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ statements }),
+  });
+  if (!res.ok) throw new Error(`Batch error: ${res.statusText}`);
 }
 
-function parseJsonArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
+// ── Mappers ────────────────────────────────────────────────────────────────
+
+function parseJsonArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v !== 'string' || !v.trim()) return [];
+  try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(String) : []; }
+  catch { return []; }
 }
 
-function rowsFromResult(res: { columns: string[]; values: unknown[][] }) {
-  return res.values.map((vals) => {
-    const obj: Record<string, unknown> = {};
-    vals.forEach((v, i) => {
-      obj[res.columns[i]] = v;
-    });
-    return obj;
+function esc(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
+function toCategory(r: Record<string, unknown>): Category {
+  return {
+    id: String(r.id), code: String(r.code ?? ''), title: String(r.title),
+    subtitle: String(r.subtitle ?? ''), color: String(r.color ?? '#991b1b'),
+    bgLight: String(r.bg_light ?? '#fff7f7'), bannerTitle: String(r.banner_title ?? ''),
+    bannerDescription: String(r.banner_description ?? ''),
+    applications: parseJsonArray(r.applications),
+    brochureCount: Number(r.brochure_count) || 0, iconName: String(r.icon_name ?? 'BookOpen'),
+  };
+}
+
+function toBrochure(r: Record<string, unknown>): Brochure {
+  const id = String(r.id);
+  return {
+    id, categoryId: String(r.category_id), title: String(r.title),
+    pages: Number(r.pages) || 0, yearOrType: String(r.year_or_type ?? ''),
+    fileSize: String(r.file_size ?? ''), description: String(r.description ?? ''),
+    pdfUrl: r.pdf_url ? String(r.pdf_url) : PDF_FALLBACKS[id],
+    coverImage: r.cover_image ? String(r.cover_image) : undefined,
+    pageImages: parseJsonArray(r.page_images),
+  };
+}
+
+function toSpecialist(r: Record<string, unknown>): Specialist {
+  return {
+    id: String(r.id), categoryId: String(r.category_id), title: String(r.title),
+    role: String(r.role ?? ''), email: String(r.email ?? ''), phone: String(r.phone ?? ''),
+  };
+}
+
+function toLead(r: Record<string, unknown>): Lead {
+  return {
+    id: String(r.id), createdAt: String(r.created_at), fullName: String(r.full_name),
+    company: r.company ? String(r.company) : '',
+    email: r.email ? String(r.email) : '',
+    phone: r.phone ? String(r.phone) : '',
+    position: r.position ? String(r.position) : '',
+    categoryId: r.category_id ? String(r.category_id) : undefined,
+    categoryName: r.category_name ? String(r.category_name) : undefined,
+    brochureId: r.brochure_id ? String(r.brochure_id) : undefined,
+    brochureTitle: r.brochure_title ? String(r.brochure_title) : undefined,
+    requirementType: r.requirement_type ? String(r.requirement_type) : undefined,
+    requirementDetail: r.requirement_detail ? String(r.requirement_detail) : undefined,
+    specialistArea: r.specialist_area ? String(r.specialist_area) : undefined,
+    authorizedTerms: !!r.authorized_terms,
+    status: r.status as Lead['status'],
+    source: r.source as Lead['source'],
+  };
+}
+
+// ── Carga inicial ──────────────────────────────────────────────────────────
+
+async function loadAll(): Promise<void> {
+  const [leads, cats, bros, specs, sets, stats] = await Promise.all([
+    query('SELECT * FROM leads ORDER BY datetime(created_at) DESC'),
+    query('SELECT * FROM categories ORDER BY title'),
+    query('SELECT * FROM brochures ORDER BY title'),
+    query('SELECT * FROM specialists ORDER BY title'),
+    query('SELECT * FROM kiosk_settings WHERE id = 1'),
+    query('SELECT key, value FROM stats'),
+  ]);
+
+  leadsCache       = leads.map(toLead);
+  categoriesCache  = cats.map(toCategory);
+  brochuresCache   = bros.map(toBrochure);
+  specialistsCache = specs.map(toSpecialist);
+
+  if (sets.length) {
+    const r = sets[0];
+    settingsCache = {
+      idleTimeoutSeconds:           Number(r.idle_timeout_seconds)            || DEFAULT_SETTINGS.idleTimeoutSeconds,
+      autoResetConfirmationSeconds: Number(r.auto_reset_confirmation_seconds) || DEFAULT_SETTINGS.autoResetConfirmationSeconds,
+      enableVirtualKeyboard:        !!Number(r.enable_virtual_keyboard),
+      totemFrameMode:               !!Number(r.totem_frame_mode),
+      companyName:  String(r.company_name  || DEFAULT_SETTINGS.companyName),
+      eventTitle:   String(r.event_title   || DEFAULT_SETTINGS.eventTitle),
+    };
+  }
+
+  statsCache = { views: 0, sessions: 0 };
+  stats.forEach(r => {
+    if (r.key === 'brochure_views') statsCache.views    = Number(r.value) || 0;
+    if (r.key === 'sessions')       statsCache.sessions = Number(r.value) || 0;
   });
 }
 
-function mapCategoryRow(row: Record<string, unknown>): Category {
-  return {
-    id: String(row.id),
-    code: String(row.code),
-    title: String(row.title),
-    subtitle: String(row.subtitle),
-    color: String(row.color),
-    bgLight: String(row.bg_light),
-    bannerTitle: String(row.banner_title),
-    bannerDescription: String(row.banner_description),
-    applications: parseJsonArray(row.applications),
-    brochureCount: Number(row.brochure_count) || 0,
-    iconName: String(row.icon_name)
-  };
-}
+// ── Init ───────────────────────────────────────────────────────────────────
 
-function mapBrochureRow(row: Record<string, unknown>): Brochure {
-  const id = String(row.id);
-  const pdfFromDb = row.pdf_url ? String(row.pdf_url) : undefined;
-  return {
-    id,
-    categoryId: String(row.category_id),
-    title: String(row.title),
-    pages: Number(row.pages) || 0,
-    yearOrType: String(row.year_or_type),
-    fileSize: String(row.file_size),
-    description: String(row.description),
-    pdfUrl: pdfFromDb || PDF_URL_FALLBACKS[id],
-    coverImage: row.cover_image ? String(row.cover_image) : undefined,
-    pageImages: parseJsonArray(row.page_images)
-  };
-}
-
-function mapSpecialistRow(row: Record<string, unknown>): Specialist {
-  return {
-    id: String(row.id),
-    categoryId: String(row.category_id),
-    title: String(row.title),
-    role: String(row.role),
-    email: String(row.email),
-    phone: String(row.phone)
-  };
-}
-
-function mapLeadRow(row: Record<string, unknown>): Lead {
-  return {
-    id: String(row.id),
-    createdAt: String(row.created_at),
-    fullName: String(row.full_name),
-    company: row.company ? String(row.company) : '',
-    email: row.email ? String(row.email) : '',
-    phone: row.phone ? String(row.phone) : '',
-    position: row.position ? String(row.position) : '',
-    categoryId: row.category_id ? String(row.category_id) : undefined,
-    categoryName: row.category_name ? String(row.category_name) : undefined,
-    brochureId: row.brochure_id ? String(row.brochure_id) : undefined,
-    brochureTitle: row.brochure_title ? String(row.brochure_title) : undefined,
-    requirementType: row.requirement_type ? String(row.requirement_type) : undefined,
-    requirementDetail: row.requirement_detail ? String(row.requirement_detail) : undefined,
-    specialistArea: row.specialist_area ? String(row.specialist_area) : undefined,
-    authorizedTerms: !!row.authorized_terms,
-    status: row.status as Lead['status'],
-    source: row.source as Lead['source']
-  };
-}
-
-function loadCachesFromDb() {
-  if (!db) return;
-
-  const leadsRes = db.exec('SELECT * FROM leads ORDER BY datetime(created_at) DESC');
-  leadsCache = leadsRes[0] ? rowsFromResult(leadsRes[0]).map(mapLeadRow) : [];
-
-  const catRes = db.exec('SELECT * FROM categories ORDER BY title');
-  categoriesCache = catRes[0] ? rowsFromResult(catRes[0]).map(mapCategoryRow) : [];
-
-  const broRes = db.exec('SELECT * FROM brochures ORDER BY title');
-  brochuresCache = broRes[0] ? rowsFromResult(broRes[0]).map(mapBrochureRow) : [];
-
-  const specRes = db.exec('SELECT * FROM specialists ORDER BY title');
-  specialistsCache = specRes[0] ? rowsFromResult(specRes[0]).map(mapSpecialistRow) : [];
-
-  const setRes = db.exec('SELECT * FROM kiosk_settings WHERE id = 1');
-  if (setRes[0]) {
-    const row = rowsFromResult(setRes[0])[0];
-    settingsCache = {
-      idleTimeoutSeconds: Number(row.idle_timeout_seconds) || DEFAULT_SETTINGS.idleTimeoutSeconds,
-      autoResetConfirmationSeconds: Number(row.auto_reset_confirmation_seconds) || DEFAULT_SETTINGS.autoResetConfirmationSeconds,
-      enableVirtualKeyboard: !!Number(row.enable_virtual_keyboard),
-      totemFrameMode: !!Number(row.totem_frame_mode),
-      companyName: String(row.company_name || DEFAULT_SETTINGS.companyName),
-      eventTitle: String(row.event_title || DEFAULT_SETTINGS.eventTitle)
-    };
-  } else {
-    settingsCache = DEFAULT_SETTINGS;
-  }
-
-  const statsRes = db.exec('SELECT key, value FROM stats');
-  statsCache = { views: 0, sessions: 0 };
-  if (statsRes[0]) {
-    rowsFromResult(statsRes[0]).forEach((row) => {
-      if (row.key === 'brochure_views') statsCache.views = Number(row.value) || 0;
-      if (row.key === 'sessions') statsCache.sessions = Number(row.value) || 0;
-    });
-  }
-}
-
-export function isStorageReady(): boolean {
-  return storageReady;
-}
+export function isStorageReady(): boolean { return storageReady; }
 
 export function initStorage(): Promise<void> {
-  if (storageReady) return Promise.resolve();
-  if (initPromise) return initPromise;
+  if (storageReady)  return Promise.resolve();
+  if (initPromise)   return initPromise;
 
   initPromise = (async () => {
-    SQL = await initSqlJs({ locateFile: () => wasmUrl });
-
-    try {
-      const persisted = localStorage.getItem(SQLITE_PERSIST_KEY);
-      if (persisted) {
-        db = new SQL.Database(base64ToUint8Array(persisted));
-        console.info('totem-marco restaurado desde almacenamiento local');
-      } else {
-        const resp = await fetch('/totem-marco');
-        if (!resp.ok) throw new Error('No se pudo cargar la base de datos totem-marco');
-        const buffer = await resp.arrayBuffer();
-        db = new SQL.Database(new Uint8Array(buffer));
-        persistDbSnapshot();
-      }
-    } catch (error) {
-      console.warn('No se pudo restaurar la base local, se cargará desde archivo estático:', error);
-      const resp = await fetch('/totem-marco');
-      if (!resp.ok) throw new Error('No se pudo cargar la base de datos totem-marco');
-      const buffer = await resp.arrayBuffer();
-      db = new SQL.Database(new Uint8Array(buffer));
-      persistDbSnapshot();
-    }
-
-    loadCachesFromDb();
+    const health = await fetch(`${API}/health`);
+    if (!health.ok) throw new Error('Servidor no disponible en localhost:3001');
+    await loadAll();
     storageReady = true;
-    console.info('totem-marco sincronizado con el sistema');
+    console.info('[DB] totem-marco conectado y listo');
     storageEvents.dispatchEvent(new Event('storageReady'));
-  })().catch((err) => {
+  })().catch(err => {
     initPromise = null;
-    console.error('Error inicializando totem-marco:', err);
     throw err;
   });
 
   return initPromise;
 }
 
-function assertDb(): Database {
-  if (!db) throw new Error('totem-marco no está inicializado');
-  return db;
-}
+// ── Leads ──────────────────────────────────────────────────────────────────
 
-export function getStoredLeads(): Lead[] {
-  return leadsCache;
-}
+export function getStoredLeads(): Lead[] { return leadsCache; }
 
 export function saveLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>): Lead {
-  const newLead: Lead = {
+  const l: Lead = {
     ...leadData,
     id: 'lead-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     createdAt: new Date().toISOString(),
-    status: 'Nuevo'
+    status: 'Nuevo',
   };
+  leadsCache = [l, ...leadsCache];
 
-  leadsCache = [newLead, ...leadsCache];
+  const sql = `INSERT OR REPLACE INTO leads (
+    id, created_at, full_name, company, email, phone, position,
+    category_id, category_name, brochure_id, brochure_title,
+    requirement_type, requirement_detail, specialist_area,
+    authorized_terms, status, source
+  ) VALUES (
+    '${esc(l.id)}','${esc(l.createdAt)}','${esc(l.fullName)}',
+    ${l.company       ? `'${esc(l.company)}'`       : 'NULL'},
+    ${l.email         ? `'${esc(l.email)}'`         : 'NULL'},
+    ${l.phone         ? `'${esc(l.phone)}'`         : 'NULL'},
+    ${l.position      ? `'${esc(l.position)}'`      : 'NULL'},
+    ${l.categoryId    ? `'${esc(l.categoryId)}'`    : 'NULL'},
+    ${l.categoryName  ? `'${esc(l.categoryName)}'`  : 'NULL'},
+    ${l.brochureId    ? `'${esc(l.brochureId)}'`    : 'NULL'},
+    ${l.brochureTitle ? `'${esc(l.brochureTitle)}'` : 'NULL'},
+    ${l.requirementType   ? `'${esc(l.requirementType)}'`   : 'NULL'},
+    ${l.requirementDetail ? `'${esc(l.requirementDetail)}'` : 'NULL'},
+    ${l.specialistArea    ? `'${esc(l.specialistArea)}'`    : 'NULL'},
+    ${l.authorizedTerms ? 1 : 0},'${esc(l.status)}','${esc(l.source ?? 'Biblioteca')}'
+  )`;
 
-  try {
-    const database = assertDb();
-    const stmt = database.prepare(
-      `INSERT OR REPLACE INTO leads (
-        id, created_at, full_name, company, email, phone, position,
-        category_id, category_name, brochure_id, brochure_title,
-        requirement_type, requirement_detail, specialist_area,
-        authorized_terms, status, source
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    );
-    stmt.run([
-      newLead.id,
-      newLead.createdAt,
-      newLead.fullName,
-      newLead.company || null,
-      newLead.email || null,
-      newLead.phone || null,
-      newLead.position || null,
-      newLead.categoryId || null,
-      newLead.categoryName || null,
-      newLead.brochureId || null,
-      newLead.brochureTitle || null,
-      newLead.requirementType || null,
-      newLead.requirementDetail || null,
-      newLead.specialistArea || null,
-      newLead.authorizedTerms ? 1 : 0,
-      newLead.status,
-      newLead.source || 'Biblioteca'
-    ]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error insertando lead en totem-marco', err);
-  }
-
-  persistDbSnapshot();
+  execute(sql).catch(err => console.error('[DB] saveLead:', err));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
-
-  return newLead;
+  return l;
 }
 
-export function updateLead(id: string, patch: Partial<Lead>): Lead | null {
-  const existing = leadsCache.find(l => l.id === id);
-  if (!existing) return null;
-  const updated = { ...existing, ...patch };
-  leadsCache = leadsCache.map(l => l.id === id ? updated : l);
-    try {
-    const dbIns = assertDb();
-    // Build simple UPDATE with provided fields
-    const fields = Object.keys(patch).filter(k => k !== 'id' && k !== 'createdAt');
-    if (fields.length) {
-      const setSql = fields.map(f => `${toSnakeCase(String(f))} = ?`).join(', ');
-      const values = fields.map(f => (updated as any)[f]);
-      values.push(id);
-      const stmt = dbIns.prepare(`UPDATE leads SET ${setSql} WHERE id = ?`);
-      stmt.run(values);
-      stmt.free();
-    }
-  } catch (err) {
-    console.error('Error actualizando lead en totem-marco', err);
-  }
-  persistDbSnapshot();
+export function updateLeadStatus(id: string, newStatus: Lead['status']): Lead[] {
+  leadsCache = leadsCache.map(l => l.id === id ? { ...l, status: newStatus } : l);
+  execute(`UPDATE leads SET status = '${esc(newStatus)}' WHERE id = '${esc(id)}'`)
+    .catch(err => console.error('[DB] updateLeadStatus:', err));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
-  return updated;
+  return leadsCache;
 }
 
 export function deleteLead(id: string): boolean {
-  const exists = leadsCache.some(l => l.id === id);
-  if (!exists) return false;
+  if (!leadsCache.some(l => l.id === id)) return false;
   leadsCache = leadsCache.filter(l => l.id !== id);
-  try {
-    const stmt = assertDb().prepare('DELETE FROM leads WHERE id = ?');
-    stmt.run([id]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error borrando lead en totem-marco', err);
-  }
-  persistDbSnapshot();
+  execute(`DELETE FROM leads WHERE id = '${esc(id)}'`)
+    .catch(err => console.error('[DB] deleteLead:', err));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
   return true;
 }
 
-function toSnakeCase(s: string) {
-  return s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`).replace(/^_/, '');
-}
+// ── Settings ───────────────────────────────────────────────────────────────
 
-export function updateLeadStatus(id: string, newStatus: Lead['status']): Lead[] {
-  leadsCache = leadsCache.map((item) => (item.id === id ? { ...item, status: newStatus } : item));
-  try {
-    const stmt = assertDb().prepare('UPDATE leads SET status = ? WHERE id = ?');
-    stmt.run([newStatus, id]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error actualizando estado del lead en totem-marco', err);
-  }
-  persistDbSnapshot();
-  storageEvents.dispatchEvent(new Event('leadsChanged'));
-  return leadsCache;
-}
+export function getKioskSettings(): KioskSettings { return settingsCache; }
 
-export function getKioskSettings(): KioskSettings {
-  return settingsCache;
-}
-
-export function saveKioskSettings(settings: Partial<KioskSettings>): KioskSettings {
-  settingsCache = { ...settingsCache, ...settings };
-  try {
-    const stmt = assertDb().prepare(
-      `UPDATE kiosk_settings SET
-        idle_timeout_seconds = ?,
-        auto_reset_confirmation_seconds = ?,
-        enable_virtual_keyboard = ?,
-        totem_frame_mode = ?,
-        company_name = ?,
-        event_title = ?
-      WHERE id = 1`
-    );
-    stmt.run([
-      settingsCache.idleTimeoutSeconds,
-      settingsCache.autoResetConfirmationSeconds,
-      settingsCache.enableVirtualKeyboard ? 1 : 0,
-      settingsCache.totemFrameMode ? 1 : 0,
-      settingsCache.companyName,
-      settingsCache.eventTitle
-    ]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error guardando configuración en totem-marco', err);
-  }
-  persistDbSnapshot();
+export function saveKioskSettings(s: Partial<KioskSettings>): { settings: KioskSettings; saved: boolean } {
+  settingsCache = { ...settingsCache, ...s };
+  const c = settingsCache;
+  execute(`UPDATE kiosk_settings SET
+    idle_timeout_seconds = ${c.idleTimeoutSeconds},
+    auto_reset_confirmation_seconds = ${c.autoResetConfirmationSeconds},
+    enable_virtual_keyboard = ${c.enableVirtualKeyboard ? 1 : 0},
+    totem_frame_mode = ${c.totemFrameMode ? 1 : 0},
+    company_name = '${esc(c.companyName)}',
+    event_title = '${esc(c.eventTitle)}'
+    WHERE id = 1`
+  ).catch(err => console.error('[DB] saveKioskSettings:', err));
   storageEvents.dispatchEvent(new Event('settingsChanged'));
-  return settingsCache;
+  return { settings: settingsCache, saved: true };
 }
+
+// ── Stats ──────────────────────────────────────────────────────────────────
 
 export function recordBrochureView(): number {
-  statsCache.views = (statsCache.views || 0) + 1;
-  try {
-    const stmt = assertDb().prepare('INSERT OR REPLACE INTO stats (key, value) VALUES (?, ?)');
-    stmt.run(['brochure_views', statsCache.views]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error actualizando brochure_views en totem-marco', err);
-  }
-  persistDbSnapshot();
-  storageEvents.dispatchEvent(new Event('statsChanged'));
+  statsCache.views++;
+  execute(`UPDATE stats SET value = value + 1 WHERE key = 'brochure_views'`).catch(() => {});
   return statsCache.views;
 }
 
 export function recordNewSession(): number {
-  statsCache.sessions = (statsCache.sessions || 0) + 1;
-  try {
-    const stmt = assertDb().prepare('INSERT OR REPLACE INTO stats (key, value) VALUES (?, ?)');
-    stmt.run(['sessions', statsCache.sessions]);
-    stmt.free();
-  } catch (err) {
-    console.error('Error actualizando sessions en totem-marco', err);
-  }
-  persistDbSnapshot();
-  storageEvents.dispatchEvent(new Event('statsChanged'));
+  statsCache.sessions++;
+  execute(`UPDATE stats SET value = value + 1 WHERE key = 'sessions'`).catch(() => {});
   return statsCache.sessions;
 }
 
 export function getAdminStats(): AdminStats {
-  const leads = leadsCache;
-  const views = statsCache.views || 0;
-  const sessions = statsCache.sessions || 0;
-  const rate = sessions > 0 ? Math.round((leads.length / sessions) * 100) : 74;
+  const rate = statsCache.sessions > 0
+    ? Math.round((leadsCache.length / statsCache.sessions) * 100) : 74;
   return {
-    totalLeads: leads.length,
+    totalLeads: leadsCache.length,
     conversionRate: Math.min(100, Math.max(10, rate)),
-    totalBrochuresViewed: views,
-    totalSessions: sessions
+    totalBrochuresViewed: statsCache.views,
+    totalSessions: statsCache.sessions,
   };
 }
 
-export function exportLeadsToXLSX(): void {
-  const leads = getStoredLeads();
-  const formattedData = leads.map((lead, index) => ({
-    N: index + 1,
-    ID: lead.id,
-    'Fecha y Hora': new Date(lead.createdAt).toLocaleString('es-PE'),
-    'Nombre y Apellido': lead.fullName,
-    Empresa: lead.company,
-    'Correo Corporativo': lead.email,
-    'Teléfono / WhatsApp': lead.phone || 'N/A',
-    Cargo: lead.position || 'N/A',
-    'Categoría de Interés': lead.categoryName || 'General',
-    'Brochure Consultado': lead.brochureTitle || 'N/A',
-    'Tipo de Requerimiento': lead.requirementType || 'N/A',
-    'Detalle Requerimiento': lead.requirementDetail || 'N/A',
-    'Origen Recorrido': lead.source,
-    Estado: lead.status,
-    'Autorizó Datos': lead.authorizedTerms ? 'SÍ' : 'NO'
-  }));
+// ── Categorías ─────────────────────────────────────────────────────────────
 
-  const worksheet = XLSX.utils.json_to_sheet(formattedData);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads MARCO Explorer');
-  const max_width = formattedData.reduce((acc, row) => {
-    Object.keys(row).forEach((k, i) => {
-      const valStr = String((row as Record<string, unknown>)[k] || '');
-      acc[i] = Math.max(acc[i] || 10, valStr.length + 3);
-    });
-    return acc;
-  }, [] as number[]);
-  worksheet['!cols'] = max_width.map((w) => ({ wch: w }));
-  const dateStr = new Date().toISOString().split('T')[0];
-  XLSX.writeFile(workbook, `MARCO_Explorer_Leads_${dateStr}.xlsx`);
-}
+export function getStoredCategories(): Category[] { return categoriesCache; }
 
-export function exportAllDataAsJSON(): void {
+export async function saveCategories(categories: Category[]): Promise<boolean> {
+  const prev = categoriesCache;
+  categoriesCache = categories;
   try {
-    const payload = {
-      leads: getStoredLeads(),
-      categories: getStoredCategories(),
-      brochures: getStoredBrochures(),
-      specialists: getStoredSpecialists(),
-      settings: getKioskSettings(),
-      stats: { views: statsCache.views, sessions: statsCache.sessions }
-    };
-    const dataStr = JSON.stringify(payload, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `MARCO_Explorer_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Error exportando datos JSON', err);
-  }
-}
-
-export function importDataFromJSON(jsonString: string): boolean {
-  try {
-    const data = JSON.parse(jsonString);
-    const database = assertDb();
-
-    if (data.leads) {
-      database.run('DELETE FROM leads');
-      const stmt = database.prepare(
-        `INSERT OR REPLACE INTO leads (
-          id, created_at, full_name, company, email, phone, position,
-          category_id, category_name, brochure_id, brochure_title,
-          requirement_type, requirement_detail, specialist_area,
-          authorized_terms, status, source
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      );
-      data.leads.forEach((lead: Lead) => {
-        stmt.run([
-          lead.id,
-          lead.createdAt,
-          lead.fullName,
-          lead.company || null,
-          lead.email || null,
-          lead.phone || null,
-          lead.position || null,
-          lead.categoryId || null,
-          lead.categoryName || null,
-          lead.brochureId || null,
-          lead.brochureTitle || null,
-          lead.requirementType || null,
-          lead.requirementDetail || null,
-          lead.specialistArea || null,
-          lead.authorizedTerms ? 1 : 0,
-          lead.status,
-          lead.source
-        ]);
-      });
-      stmt.free();
-    }
-
-    if (data.categories) saveCategories(data.categories);
-    if (data.brochures) saveBrochures(data.brochures);
-
-    if (data.settings) saveKioskSettings(data.settings);
-
-    if (data.stats) {
-      if (typeof data.stats.views === 'number') {
-        statsCache.views = data.stats.views;
-        const stmt = database.prepare('INSERT OR REPLACE INTO stats (key, value) VALUES (?, ?)');
-        stmt.run(['brochure_views', statsCache.views]);
-        stmt.free();
-      }
-      if (typeof data.stats.sessions === 'number') {
-        statsCache.sessions = data.stats.sessions;
-        const stmt2 = database.prepare('INSERT OR REPLACE INTO stats (key, value) VALUES (?, ?)');
-        stmt2.run(['sessions', statsCache.sessions]);
-        stmt2.free();
-      }
-    }
-
-    loadCachesFromDb();
-    // Notify listeners
-    storageEvents.dispatchEvent(new Event('leadsChanged'));
+    const stmts = [
+      'DELETE FROM categories',
+      ...categories.map(c => `INSERT INTO categories (
+        id, code, title, subtitle, color, bg_light, banner_title,
+        banner_description, applications, brochure_count, icon_name
+      ) VALUES (
+        '${esc(c.id)}','${esc(c.code)}','${esc(c.title)}','${esc(c.subtitle)}',
+        '${esc(c.color)}','${esc(c.bgLight)}','${esc(c.bannerTitle)}',
+        '${esc(c.bannerDescription)}',
+        '${esc(JSON.stringify(c.applications))}',
+        ${c.brochureCount},'${esc(c.iconName)}'
+      )`),
+    ];
+    await batch(stmts);
     storageEvents.dispatchEvent(new Event('categoriesChanged'));
-    storageEvents.dispatchEvent(new Event('brochuresChanged'));
-    storageEvents.dispatchEvent(new Event('specialistsChanged'));
-    storageEvents.dispatchEvent(new Event('settingsChanged'));
-    storageEvents.dispatchEvent(new Event('statsChanged'));
     return true;
   } catch (err) {
-    console.error('Error importando datos JSON', err);
+    console.error('[DB] saveCategories:', err);
+    categoriesCache = prev;
     return false;
   }
 }
 
-export function getStoredCategories(): Category[] {
-  return categoriesCache;
-}
+// ── Brochures ──────────────────────────────────────────────────────────────
 
-export function saveCategories(categories: Category[]): void {
-  categoriesCache = categories;
-  try {
-    const database = assertDb();
-    database.run('DELETE FROM categories');
-    const stmt = database.prepare(
-      `INSERT INTO categories (
-        id, code, title, subtitle, color, bg_light, banner_title, banner_description,
-        applications, brochure_count, icon_name
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-    );
-    categories.forEach((category) => {
-      stmt.run([
-        category.id,
-        category.code,
-        category.title,
-        category.subtitle,
-        category.color,
-        category.bgLight,
-        category.bannerTitle,
-        category.bannerDescription,
-        JSON.stringify(category.applications),
-        category.brochureCount,
-        category.iconName
-      ]);
-    });
-    stmt.free();
-  } catch (err) {
-    console.error('Error guardando categorías en totem-marco', err);
-  }
-  persistDbSnapshot();
-  storageEvents.dispatchEvent(new Event('categoriesChanged'));
-}
+export function getStoredBrochures(): Brochure[] { return brochuresCache; }
 
-export function createCategory(category: Category): Category[] {
-  const categories = [...getStoredCategories(), category];
-  saveCategories(categories);
-  return categories;
-}
-
-export function updateCategory(category: Category): Category[] {
-  const categories = getStoredCategories().map((item) => (item.id === category.id ? category : item));
-  saveCategories(categories);
-  return categories;
-}
-
-export function deleteCategory(id: string): Category[] {
-  const categories = getStoredCategories().filter((item) => item.id !== id);
-  saveCategories(categories);
-  return categories;
-}
-
-export function getStoredBrochures(): Brochure[] {
-  return brochuresCache;
-}
-
-export function saveBrochures(brochures: Brochure[]): void {
+export async function saveBrochures(brochures: Brochure[]): Promise<boolean> {
+  const prev = brochuresCache;
   brochuresCache = brochures;
   try {
-    const database = assertDb();
-    database.run('DELETE FROM brochures');
-    const stmt = database.prepare(
-      `INSERT INTO brochures (
-        id, category_id, title, pages, year_or_type, file_size, description,
-        pdf_url, cover_image, page_images
-      ) VALUES (?,?,?,?,?,?,?,?,?,?)`
-    );
-    brochures.forEach((brochure) => {
-      stmt.run([
-        brochure.id,
-        brochure.categoryId,
-        brochure.title,
-        brochure.pages || 0,
-        brochure.yearOrType || '',
-        brochure.fileSize || '',
-        brochure.description || '',
-        brochure.pdfUrl || null,
-        brochure.coverImage || null,
-        JSON.stringify(brochure.pageImages || [])
-      ]);
-    });
-    stmt.free();
+    const stmts = [
+      'DELETE FROM brochures',
+      ...brochures.map(b => `INSERT INTO brochures (
+        id, category_id, title, pages, year_or_type, file_size,
+        description, pdf_url, cover_image, page_images
+      ) VALUES (
+        '${esc(b.id)}','${esc(b.categoryId)}','${esc(b.title)}',
+        ${b.pages || 0},
+        '${esc(b.yearOrType ?? '')}','${esc(b.fileSize ?? '')}',
+        '${esc(b.description ?? '')}',
+        ${b.pdfUrl     ? `'${esc(b.pdfUrl)}'`     : 'NULL'},
+        ${b.coverImage ? `'${esc(b.coverImage)}'` : 'NULL'},
+        '${esc(JSON.stringify(b.pageImages ?? []))}'
+      )`),
+    ];
+    await batch(stmts);
+    storageEvents.dispatchEvent(new Event('brochuresChanged'));
+    return true;
   } catch (err) {
-    console.error('Error guardando brochures en totem-marco', err);
+    console.error('[DB] saveBrochures:', err);
+    brochuresCache = prev;
+    return false;
   }
-  persistDbSnapshot();
-  storageEvents.dispatchEvent(new Event('brochuresChanged'));
 }
 
-export function createBrochure(brochure: Brochure): Brochure[] {
-  const brochures = [...getStoredBrochures(), brochure];
-  saveBrochures(brochures);
-  return brochures;
+// ── Especialistas ──────────────────────────────────────────────────────────
+
+export function getStoredSpecialists(): Specialist[] { return specialistsCache; }
+
+// ── Exportar ───────────────────────────────────────────────────────────────
+
+export function exportLeadsToXLSX(): void {
+  const data = leadsCache.map((l, i) => ({
+    N: i + 1, ID: l.id,
+    'Fecha y Hora': new Date(l.createdAt).toLocaleString('es-PE'),
+    'Nombre y Apellido': l.fullName, Empresa: l.company,
+    'Correo Corporativo': l.email,
+    'Teléfono / WhatsApp': l.phone || 'N/A', Cargo: l.position || 'N/A',
+    'Categoría de Interés': l.categoryName || 'General',
+    'Brochure Consultado': l.brochureTitle || 'N/A',
+    'Tipo de Requerimiento': l.requirementType || 'N/A',
+    'Detalle Requerimiento': l.requirementDetail || 'N/A',
+    'Origen Recorrido': l.source, Estado: l.status,
+    'Autorizó Datos': l.authorizedTerms ? 'SÍ' : 'NO',
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Leads MARCO Explorer');
+  XLSX.writeFile(wb, `MARCO_Explorer_Leads_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
-export function updateBrochure(brochure: Brochure): Brochure[] {
-  const brochures = getStoredBrochures().map((item) => (item.id === brochure.id ? brochure : item));
-  saveBrochures(brochures);
-  return brochures;
-}
-
-export function deleteBrochure(id: string): Brochure[] {
-  const brochures = getStoredBrochures().filter((item) => item.id !== id);
-  saveBrochures(brochures);
-  return brochures;
-}
-
-export function getStoredSpecialists(): Specialist[] {
-  return specialistsCache;
-}
-
-export function exportDatabase(): void {
-  if (!db || !SQL) {
-    console.warn('totem-marco no está inicializado — no hay base de datos para exportar');
-    return;
-  }
-  try {
-    const binary = db.export();
-    const blob = new Blob([binary], { type: 'application/x-sqlite3' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'totem-marco';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Error exportando totem-marco', err);
-  }
+export function exportAllDataAsJSON(): void {
+  const blob = new Blob([JSON.stringify({
+    leads: leadsCache, categories: categoriesCache,
+    brochures: brochuresCache, specialists: specialistsCache,
+    settings: settingsCache, stats: statsCache,
+  }, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `MARCO_Backup_${new Date().toISOString().split('T')[0]}.json`,
+  });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
 }

@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Category, Brochure, Lead, KioskSettings, Specialist } from './types';
 import {
   initStorage,
-  getKioskSettings,
-  saveKioskSettings,
+  getKioskSettings as getStoredSettings,
+  saveKioskSettings as saveKioskSettingsRaw,
   getStoredLeads,
   saveLead,
-  recordBrochureView,
-  recordNewSession,
+  recordBrochureView as incrementBrochureViews,
+  recordNewSession as incrementSessions,
   getStoredCategories,
   getStoredBrochures,
   getStoredSpecialists,
@@ -15,7 +15,6 @@ import {
   saveBrochures,
   storageEvents
 } from './utils/storage';
-
 import { TotemFrameContainer } from './components/TotemFrameContainer';
 import { TotemHeader } from './components/TotemHeader';
 import { PdfViewerModal } from './components/PdfViewerModal';
@@ -49,7 +48,7 @@ export default function App() {
   const [brochures, setBrochures] = useState<Brochure[]>([]);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [settings, setSettings] = useState<KioskSettings>(getKioskSettings());
+  const [settings, setSettings] = useState<KioskSettings>(getStoredSettings());
 
   // Navigation Context State
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -79,7 +78,7 @@ export default function App() {
         setBrochures(getStoredBrochures());
         setSpecialists(getStoredSpecialists());
         setLeads(getStoredLeads());
-        setSettings(getKioskSettings());
+        setSettings(getStoredSettings());
         setStorageReady(true);
       })
       .catch((err: Error) => {
@@ -93,13 +92,13 @@ export default function App() {
     const onCats = () => setCategories(getStoredCategories());
     const onBros = () => setBrochures(getStoredBrochures());
     const onSpecs = () => setSpecialists(getStoredSpecialists());
-    const onSettings = () => setSettings(getKioskSettings());
+    const onSettings = () => setSettings(getStoredSettings());
     const onReady = () => {
       setCategories(getStoredCategories());
       setBrochures(getStoredBrochures());
       setSpecialists(getStoredSpecialists());
       setLeads(getStoredLeads());
-      setSettings(getKioskSettings());
+      setSettings(getStoredSettings());
       setStorageReady(true);
     };
 
@@ -160,8 +159,12 @@ export default function App() {
   }, [handleUserActivity]);
 
   // Handle start from attraction screen
-  const handleStartAttraction = () => {
-    recordNewSession();
+  const handleStartAttraction = async () => {
+    try {
+      incrementSessions();
+    } catch (err) {
+      console.error('Error incrementando sesiones:', err);
+    }
     handleUserActivity();
     setViewState('categories');
   };
@@ -174,9 +177,13 @@ export default function App() {
   };
 
   // Open PDF Reader
-  const handleOpenBrochure = (brochure: Brochure) => {
+  const handleOpenBrochure = async (brochure: Brochure) => {
     handleUserActivity();
-    recordBrochureView();
+    try {
+      incrementBrochureViews();
+    } catch (err) {
+      console.error('Error incrementando vistas de brochure:', err);
+    }
     setActivePdfBrochure(brochure);
     setShowPdfModal(true);
   };
@@ -200,20 +207,31 @@ export default function App() {
   };
 
   // Handle Lead Submission
-  const handleSubmitLead = (leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>) => {
+  const handleSubmitLead = async (leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>) => {
     handleUserActivity();
-    const newLead = saveLead(leadData);
-    setLeads(getStoredLeads());
-    setSubmittedLead(newLead);
-    setViewState('confirmation');
+    try {
+      const newLead = saveLead(leadData);
+      setLeads(getStoredLeads());
+      setSubmittedLead(newLead);
+      setViewState('confirmation');
+    } catch (err) {
+      console.error('Error guardando lead:', err);
+      alert('Error al guardar el formulario. Intenta nuevamente.');
+    }
   };
 
   // Virtual keyboard removed: input focus handling not required
   const handleInputFocus = (_fieldKey: string) => {};
 
-  const updateSettingsHandler = (newPartial: Partial<KioskSettings>) => {
-    const updated = saveKioskSettings(newPartial);
-    setSettings(updated);
+  const updateSettingsHandler = async (newPartial: Partial<KioskSettings>) => {
+    try {
+      const { settings: updated, saved } = saveKioskSettingsRaw(newPartial);
+      setSettings(updated);
+      return saved;
+    } catch (err) {
+      console.error('Error guardando configuración:', err);
+      return false;
+    }
   };
 
   const openAdmin = () => {
@@ -424,11 +442,16 @@ export default function App() {
           settings={settings}
           onClose={closeAdmin}
           onRefreshLeads={() => setLeads(getStoredLeads())}
-          onCatalogChange={(nextCategories, nextBrochures) => {
-            saveCategories(nextCategories);
-            saveBrochures(nextBrochures);
-            setCategories(nextCategories);
-            setBrochures(nextBrochures);
+          onCatalogChange={async (nextCategories, nextBrochures) => {
+            const [catOk, broOk] = await Promise.all([
+              saveCategories(nextCategories),
+              saveBrochures(nextBrochures),
+            ]);
+            // Los storageEvents ya actualizan el estado via listeners
+            // Solo forzamos update si hubo éxito
+            if (catOk) setCategories(getStoredCategories());
+            if (broOk) setBrochures(getStoredBrochures());
+            return catOk && broOk;
           }}
           onUpdateSettings={updateSettingsHandler}
         />

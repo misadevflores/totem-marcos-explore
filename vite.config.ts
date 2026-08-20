@@ -1,21 +1,41 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    // Rutas relativas — obligatorio para Capacitor (carga desde file://)
+    base: './',
+
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Copia el WASM de sql.js al output para que Capacitor lo encuentre
+      viteStaticCopy({
+        targets: [
+          {
+            src: 'node_modules/sql.js/dist/sql-wasm.wasm',
+            dest: '.',
+          },
+        ],
+      }),
+    ],
+
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
+
+    build: {
+      // Evita que archivos grandes como el WASM sean inlineados incorrectamente
+      assetsInlineLimit: 0,
+    },
+
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };
