@@ -4,7 +4,7 @@ import {
   exportLeadsToXLSX as exportLeadsToExcel,
   updateLeadStatus,
   getAdminStats,
-  saveKioskSettings
+  saveKioskSettings,
 } from '../utils/storage';
 import { resetDb } from '../utils/db';
 import {
@@ -57,7 +57,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const showPanelMessage = (msg: string) => {
     setPanelMessage(msg);
-    window.alert(msg);
     setTimeout(() => setPanelMessage(null), 3000);
   };
 
@@ -68,7 +67,21 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       exportLeadsToExcel();
     } catch (err) {
       console.error('Error exportando leads:', err);
-      alert('No se pudo exportar los leads. Intenta nuevamente.');
+      showPanelMessage('No se pudo exportar los leads. Intenta nuevamente.');
+    }
+  };
+
+  const handleExportSqlite = () => {
+    try {
+      const a = document.createElement('a');
+      a.href = 'http://localhost:3001/api/export';
+      a.download = 'totem-marco.sqlite';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      console.error('Error exportando sqlite:', err);
+      showPanelMessage('No se pudo exportar la base de datos');
     }
   };
 
@@ -218,6 +231,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
               <span>EXPORTAR XLSX</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportSqlite}
+              title="Descargar base de datos SQLite"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl border border-slate-600 transition shadow"
+            >
+              <Database className="w-4 h-4 text-amber-300" />
+              <span>EXPORTAR .SQLITE</span>
             </button>
 
             <button

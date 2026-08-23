@@ -12,7 +12,7 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
-      // Copia el WASM de sql.js al output para que Capacitor lo encuentre
+      // Copia el WASM de sql.js al output
       viteStaticCopy({
         targets: [
           {
@@ -30,13 +30,23 @@ export default defineConfig(() => {
     },
 
     build: {
-      // Evita que archivos grandes como el WASM sean inlineados incorrectamente
       assetsInlineLimit: 0,
     },
 
     server: {
+      port: 3000,
+      host: '0.0.0.0',
       hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch: {
+        ignored: [
+          '**/public/totem-marco**',
+          '**/totem-marco**',
+          '**/*.sqlite**',
+          '**/*-journal**',
+          '**/*-wal**',
+          '**/*-shm**',
+        ],
+      },
     },
   };
 });

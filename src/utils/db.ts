@@ -1,230 +1,129 @@
 /**
- * db.ts — Capa de abstracción SQLite
+ * db.ts — Adaptador SQLite universal
  *
- * En Android (APK via Capacitor) usa @capacitor-community/sqlite nativo.
- * En browser (dev / PWA) usa sql.js con persistencia en IndexedDB.
+ * - En Android APK (Capacitor): usa @capacitor-community/sqlite nativo → persiste en disco
+ * - En browser/dev: usa servidor Express local (localhost:3001) → escribe en public/totem-marco
  */
 
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
-import initSqlJs, { Database as SqlJsDatabase, SqlJsStatic } from 'sql.js';
-import sqlWasm from 'sql.js/dist/sql-wasm.wasm?url';
 
-// ── Tipos públicos ─────────────────────────────────────────────────────────
+const DB_NAME = 'totem-marco';
+const API     = 'http://localhost:3001/api';
 
-export interface DbRow {
-  [key: string]: unknown;
+export interface DbRow { [key: string]: unknown; }
+
+// ── Interfaz común ─────────────────────────────────────────────────────────
+
+interface Adapter {
+  query(sql: string): Promise<DbRow[]>;
+  execute(sql: string): Promise<void>;
+  batch(statements: string[]): Promise<void>;
 }
 
-export interface DbAdapter {
-  query(sql: string, params?: unknown[]): Promise<DbRow[]>;
-  execute(sql: string, params?: unknown[]): Promise<void>;
-  run(sql: string): Promise<void>;
-  /** Ejecuta múltiples sentencias sin persistir snapshot entre ellas */
-  batch(statements: { sql: string; params?: unknown[] }[]): Promise<void>;
-  close(): Promise<void>;
-}
+// ── Adaptador Web: llama al servidor Express ───────────────────────────────
 
-// ── IndexedDB helpers (solo para web) ─────────────────────────────────────
-
-const IDB_NAME = 'totem-marco-db';
-const IDB_STORE = 'snapshots';
-const IDB_KEY = 'db';
-
-function openIdb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function loadSnapshotFromIdb(): Promise<Uint8Array | null> {
-  try {
-    const idb = await openIdb();
-    return new Promise((resolve, reject) => {
-      const tx = idb.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error);
+class WebAdapter implements Adapter {
+  async query(sql: string): Promise<DbRow[]> {
+    const res = await fetch(`${API}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql }),
     });
-  } catch {
-    return null;
+    if (!res.ok) throw new Error(`Query error: ${res.statusText}`);
+    return (await res.json()).data ?? [];
   }
-}
 
-async function saveSnapshotToIdb(data: Uint8Array): Promise<void> {
-  try {
-    const idb = await openIdb();
-    return new Promise((resolve, reject) => {
-      const tx = idb.transaction(IDB_STORE, 'readwrite');
-      const req = tx.objectStore(IDB_STORE).put(data, IDB_KEY);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+  async execute(sql: string): Promise<void> {
+    const res = await fetch(`${API}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql }),
     });
-  } catch (err) {
-    console.warn('[DB] No se pudo guardar snapshot en IndexedDB:', err);
+    if (!res.ok) throw new Error(`Execute error: ${res.statusText}`);
+  }
+
+  async batch(statements: string[]): Promise<void> {
+    const res = await fetch(`${API}/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statements }),
+    });
+    if (!res.ok) throw new Error(`Batch error: ${res.statusText}`);
   }
 }
 
-// ── Adaptador Web (sql.js + IndexedDB) ────────────────────────────────────
+// ── Adaptador Android: Capacitor SQLite nativo ─────────────────────────────
 
-class WebAdapter implements DbAdapter {
-  private db: SqlJsDatabase;
-
-  constructor(db: SqlJsDatabase) {
-    this.db = db;
-  }
-
-  async query(sql: string, params: unknown[] = []): Promise<DbRow[]> {
-    const stmt = this.db.prepare(sql);
-    stmt.bind(params as any);
-    const rows: DbRow[] = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject() as DbRow);
-    }
-    stmt.free();
-    return rows;
-  }
-
-  async execute(sql: string, params: unknown[] = []): Promise<void> {
-    const stmt = this.db.prepare(sql);
-    stmt.run(params as any);
-    stmt.free();
-    // Persistir tras cada escritura individual
-    await saveSnapshotToIdb(this.db.export());
-  }
-
-  async run(sql: string): Promise<void> {
-    this.db.run(sql);
-    await saveSnapshotToIdb(this.db.export());
-  }
-
-  /** Ejecuta varias sentencias y persiste el snapshot solo al final */
-  async batch(statements: { sql: string; params?: unknown[] }[]): Promise<void> {
-    for (const { sql, params = [] } of statements) {
-      const stmt = this.db.prepare(sql);
-      stmt.run(params as any);
-      stmt.free();
-    }
-    // Un solo snapshot al finalizar todas las operaciones
-    await saveSnapshotToIdb(this.db.export());
-  }
-
-  async close(): Promise<void> {
-    this.db.close();
-  }
-}
-
-// ── Adaptador Android (Capacitor SQLite nativo) ────────────────────────────
-
-class NativeAdapter implements DbAdapter {
+class NativeAdapter implements Adapter {
   private conn: SQLiteDBConnection;
 
   constructor(conn: SQLiteDBConnection) {
     this.conn = conn;
   }
 
-  async query(sql: string, params: unknown[] = []): Promise<DbRow[]> {
-    const result = await this.conn.query(sql, params as any[]);
+  async query(sql: string): Promise<DbRow[]> {
+    const result = await this.conn.query(sql);
     return (result.values ?? []) as DbRow[];
   }
 
-  async execute(sql: string, params: unknown[] = []): Promise<void> {
-    await this.conn.run(sql, params as any[]);
+  async execute(sql: string): Promise<void> {
+    await this.conn.run(sql, []);
   }
 
-  async run(sql: string): Promise<void> {
-    await this.conn.execute(sql);
-  }
-
-  async batch(statements: { sql: string; params?: unknown[] }[]): Promise<void> {
-    const set = statements.map(({ sql, params = [] }) => ({
-      statement: sql,
-      values: params as any[],
-    }));
+  async batch(statements: string[]): Promise<void> {
+    const set = statements.map(s => ({ statement: s, values: [] }));
     await this.conn.executeSet(set);
-  }
-
-  async close(): Promise<void> {
-    await this.conn.close();
   }
 }
 
-// ── Función pública: abrir la DB ───────────────────────────────────────────
+// ── Singleton ──────────────────────────────────────────────────────────────
 
-const DB_NAME = 'totem-marco';
+let _adapter: Adapter | null = null;
 
-let _adapter: DbAdapter | null = null;
-
-export async function openDb(): Promise<DbAdapter> {
+export async function openDb(): Promise<Adapter> {
   if (_adapter) return _adapter;
 
-  const platform = Capacitor.getPlatform(); // 'android' | 'ios' | 'web'
-  console.info('[DB] Plataforma detectada:', platform);
+  const platform = Capacitor.getPlatform();
+  console.info('[DB] Plataforma:', platform);
 
   if (platform === 'android' || platform === 'ios') {
     // ── Nativo ──────────────────────────────────────────────────────────
     const sqlite = new SQLiteConnection(CapacitorSQLite);
-    const ret = await sqlite.checkConnectionsConsistency();
     const isConn = (await sqlite.isConnection(DB_NAME, false)).result;
-
     let conn: SQLiteDBConnection;
-    if (ret.result && isConn) {
+
+    if (isConn) {
       conn = await sqlite.retrieveConnection(DB_NAME, false);
     } else {
       conn = await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
     }
-
     await conn.open();
     _adapter = new NativeAdapter(conn);
-    console.info('[DB] SQLite nativo abierto:', DB_NAME);
+    console.info('[DB] SQLite nativo abierto');
   } else {
-    // ── Web / Dev ────────────────────────────────────────────────────────
-    let SQL: SqlJsStatic;
-    try {
-      SQL = await initSqlJs({ locateFile: () => sqlWasm });
-    } catch (e) {
-      throw new Error('No se pudo cargar sql.js WASM: ' + String(e));
+    // ── Web/Dev ──────────────────────────────────────────────────────────
+    const health = await fetch(`${API}/health`).catch(() => null);
+    if (!health?.ok) {
+      throw new Error(
+        'El servidor SQLite no está corriendo.\n' +
+        'Ejecuta: npm run dev\n' +
+        '(arranca Vite + servidor automáticamente)'
+      );
     }
-
-    // Intentar cargar snapshot guardado (ediciones previas)
-    const saved = await loadSnapshotFromIdb();
-    let sqlDb: SqlJsDatabase;
-
-    if (saved) {
-      sqlDb = new SQL.Database(saved);
-      console.info('[DB] Snapshot cargado desde IndexedDB');
-    } else {
-      // Primera vez: cargar el archivo base desde public/
-      const resp = await fetch('/totem-marco');
-      if (!resp.ok) throw new Error(`No se pudo cargar totem-marco: ${resp.status}`);
-      const buf = await resp.arrayBuffer();
-      sqlDb = new SQL.Database(new Uint8Array(buf));
-      await saveSnapshotToIdb(sqlDb.export());
-      console.info('[DB] Base cargada desde archivo y guardada en IndexedDB');
-    }
-
-    _adapter = new WebAdapter(sqlDb);
+    _adapter = new WebAdapter();
+    console.info('[DB] Adaptador web listo → public/totem-marco');
   }
 
   return _adapter;
 }
 
-/** Reinicia la DB eliminando el snapshot de IndexedDB (útil para reset de fábrica) */
+export function getAdapter(): Adapter {
+  if (!_adapter) throw new Error('DB no inicializada — llama a openDb() primero');
+  return _adapter;
+}
+
 export async function resetDb(): Promise<void> {
-  try {
-    const idb = await openIdb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = idb.transaction(IDB_STORE, 'readwrite');
-      const req = tx.objectStore(IDB_STORE).delete(IDB_KEY);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
-    _adapter = null;
-    console.info('[DB] Snapshot eliminado — se recargará desde archivo base');
-  } catch (err) {
-    console.warn('[DB] No se pudo resetear:', err);
-  }
+  _adapter = null;
+  console.info('[DB] Adaptador reseteado — se reconectará en el próximo initStorage()');
 }

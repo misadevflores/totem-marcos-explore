@@ -127,31 +127,48 @@ export default function App() {
     setShowPdfModal(false);
   }, []);
 
+  // Refs para el timer — nada de esto causa re-renders ni recrea el intervalo
+  const idleTimeoutRef    = useRef<number>(settings.idleTimeoutSeconds);
+  const viewStateRef      = useRef<string>('attraction');
+  const resetAttractionRef = useRef(resetToAttraction);
+  const showAdminModalRef = useRef<boolean>(false);
+  const showAdminAuthRef  = useRef<boolean>(false);
+
+  // Mantener refs sincronizados sin recrear el timer
+  useEffect(() => { idleTimeoutRef.current = settings.idleTimeoutSeconds; }, [settings.idleTimeoutSeconds]);
+  useEffect(() => { viewStateRef.current = viewState; }, [viewState]);
+  useEffect(() => { resetAttractionRef.current = resetToAttraction; }, [resetToAttraction]);
+  useEffect(() => { showAdminModalRef.current = showAdminModal; }, [showAdminModal]);
+  useEffect(() => { showAdminAuthRef.current = showAdminAuth; }, [showAdminAuth]);
+
   const handleUserActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
-    setIdleTimeRemaining(settings.idleTimeoutSeconds);
-  }, [settings.idleTimeoutSeconds]);
+    setIdleTimeRemaining(idleTimeoutRef.current);
+  }, []);
 
-  // Idle reset interval timer
+  // Timer único — se crea UNA SOLA VEZ al montar, nunca se recrea
   useEffect(() => {
-    if (viewState === 'attraction' || settings.idleTimeoutSeconds <= 0) return;
-
     const timer = setInterval(() => {
-      const elapsedSeconds = Math.floor((Date.now() - lastActivityRef.current) / 1000);
-      const remaining = Math.max(0, settings.idleTimeoutSeconds - elapsedSeconds);
+      // Ignorar si estamos en pantalla de atracción, modal admin abierto o timeout desactivado
+      if (viewStateRef.current === 'attraction' || showAdminModalRef.current || showAdminAuthRef.current) return;
+      const timeout = idleTimeoutRef.current;
+      if (timeout <= 0) return;
+
+      const elapsed   = Math.floor((Date.now() - lastActivityRef.current) / 1000);
+      const remaining = Math.max(0, timeout - elapsed);
       setIdleTimeRemaining(remaining);
 
       if (remaining <= 0) {
-        resetToAttraction();
+        resetAttractionRef.current();
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [viewState, settings.idleTimeoutSeconds, resetToAttraction]);
+  }, []); // ← array vacío: solo se monta/desmonta con el componente
 
   // Global activity listener for touch screen
   useEffect(() => {
-    const events = ['touchstart', 'pointerdown', 'click', 'keydown'];
+    const events = ['touchstart', 'pointerdown', 'click', 'keydown', 'input', 'pointermove'];
     events.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
     return () => {
       events.forEach(evt => window.removeEventListener(evt, handleUserActivity));
@@ -165,7 +182,8 @@ export default function App() {
     } catch (err) {
       console.error('Error incrementando sesiones:', err);
     }
-    handleUserActivity();
+    lastActivityRef.current = Date.now(); // resetear ANTES de cambiar vista
+    setIdleTimeRemaining(idleTimeoutRef.current);
     setViewState('categories');
   };
 

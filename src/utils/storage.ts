@@ -1,18 +1,18 @@
 /**
- * storage.ts
+ * storage.ts — Capa de datos universal
  *
- * Acceso a datos via servidor Express local (server.js + better-sqlite3).
- * El archivo SQLite es public/totem-marco — visible en cualquier visualizador.
+ * Dev/PC  → server.js (Express + better-sqlite3) → public/totem-marco visible en cualquier visor SQLite
+ * Android → @capacitor-community/sqlite nativo    → persiste en disco del dispositivo
  *
- * Iniciar servidor: npm run server
- * Iniciar frontend: npm run dev
+ * Comando único: npm run dev  (arranca Vite + servidor juntos)
  */
 
 import * as XLSX from 'xlsx';
 import { Lead, KioskSettings, AdminStats, Category, Brochure, Specialist } from '../types';
 import brochureMultimarcaPdf from '../../assets/pdf/BROCHURE MULTIMARCA MARCO.pdf';
+import { openDb, getAdapter } from './db';
 
-const API = 'http://localhost:3001/api';
+// ── Constantes ─────────────────────────────────────────────────────────────
 
 export const DEFAULT_SETTINGS: KioskSettings = {
   idleTimeoutSeconds: 35,
@@ -27,50 +27,23 @@ const PDF_FALLBACKS: Record<string, string> = {
   'b-mm-1': brochureMultimarcaPdf,
 };
 
-// ── Estado ─────────────────────────────────────────────────────────────────
+// ── Estado en memoria ──────────────────────────────────────────────────────
 
 let storageReady = false;
 let initPromise: Promise<void> | null = null;
 
 export const storageEvents = new EventTarget();
 
-let leadsCache: Lead[] = [];
-let categoriesCache: Category[] = [];
-let brochuresCache: Brochure[] = [];
-let specialistsCache: Specialist[] = [];
-let settingsCache: KioskSettings = DEFAULT_SETTINGS;
+let leadsCache:       Lead[]        = [];
+let categoriesCache:  Category[]    = [];
+let brochuresCache:   Brochure[]    = [];
+let specialistsCache: Specialist[]  = [];
+let settingsCache:    KioskSettings = DEFAULT_SETTINGS;
 let statsCache = { views: 0, sessions: 0 };
 
-// ── HTTP helpers ───────────────────────────────────────────────────────────
+// ── Escape SQL ─────────────────────────────────────────────────────────────
 
-async function query(sql: string): Promise<Record<string, unknown>[]> {
-  const res = await fetch(`${API}/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sql }),
-  });
-  if (!res.ok) throw new Error(`Query error: ${res.statusText}`);
-  const json = await res.json();
-  return json.data ?? [];
-}
-
-async function execute(sql: string): Promise<void> {
-  const res = await fetch(`${API}/execute`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sql }),
-  });
-  if (!res.ok) throw new Error(`Execute error: ${res.statusText}`);
-}
-
-async function batch(statements: string[]): Promise<void> {
-  const res = await fetch(`${API}/batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statements }),
-  });
-  if (!res.ok) throw new Error(`Batch error: ${res.statusText}`);
-}
+function esc(s: string): string { return s.replace(/'/g, "''"); }
 
 // ── Mappers ────────────────────────────────────────────────────────────────
 
@@ -81,10 +54,6 @@ function parseJsonArray(v: unknown): string[] {
   catch { return []; }
 }
 
-function esc(s: string): string {
-  return s.replace(/'/g, "''");
-}
-
 function toCategory(r: Record<string, unknown>): Category {
   return {
     id: String(r.id), code: String(r.code ?? ''), title: String(r.title),
@@ -92,7 +61,8 @@ function toCategory(r: Record<string, unknown>): Category {
     bgLight: String(r.bg_light ?? '#fff7f7'), bannerTitle: String(r.banner_title ?? ''),
     bannerDescription: String(r.banner_description ?? ''),
     applications: parseJsonArray(r.applications),
-    brochureCount: Number(r.brochure_count) || 0, iconName: String(r.icon_name ?? 'BookOpen'),
+    brochureCount: Number(r.brochure_count) || 0,
+    iconName: String(r.icon_name ?? 'BookOpen'),
   };
 }
 
@@ -118,33 +88,34 @@ function toSpecialist(r: Record<string, unknown>): Specialist {
 function toLead(r: Record<string, unknown>): Lead {
   return {
     id: String(r.id), createdAt: String(r.created_at), fullName: String(r.full_name),
-    company: r.company ? String(r.company) : '',
-    email: r.email ? String(r.email) : '',
-    phone: r.phone ? String(r.phone) : '',
+    company:  r.company  ? String(r.company)  : '',
+    email:    r.email    ? String(r.email)    : '',
+    phone:    r.phone    ? String(r.phone)    : '',
     position: r.position ? String(r.position) : '',
-    categoryId: r.category_id ? String(r.category_id) : undefined,
-    categoryName: r.category_name ? String(r.category_name) : undefined,
-    brochureId: r.brochure_id ? String(r.brochure_id) : undefined,
-    brochureTitle: r.brochure_title ? String(r.brochure_title) : undefined,
-    requirementType: r.requirement_type ? String(r.requirement_type) : undefined,
+    categoryId:        r.category_id        ? String(r.category_id)        : undefined,
+    categoryName:      r.category_name      ? String(r.category_name)      : undefined,
+    brochureId:        r.brochure_id        ? String(r.brochure_id)        : undefined,
+    brochureTitle:     r.brochure_title     ? String(r.brochure_title)     : undefined,
+    requirementType:   r.requirement_type   ? String(r.requirement_type)   : undefined,
     requirementDetail: r.requirement_detail ? String(r.requirement_detail) : undefined,
-    specialistArea: r.specialist_area ? String(r.specialist_area) : undefined,
+    specialistArea:    r.specialist_area    ? String(r.specialist_area)    : undefined,
     authorizedTerms: !!r.authorized_terms,
     status: r.status as Lead['status'],
     source: r.source as Lead['source'],
   };
 }
 
-// ── Carga inicial ──────────────────────────────────────────────────────────
+// ── Carga inicial de caches ────────────────────────────────────────────────
 
 async function loadAll(): Promise<void> {
+  const db = getAdapter();
   const [leads, cats, bros, specs, sets, stats] = await Promise.all([
-    query('SELECT * FROM leads ORDER BY datetime(created_at) DESC'),
-    query('SELECT * FROM categories ORDER BY title'),
-    query('SELECT * FROM brochures ORDER BY title'),
-    query('SELECT * FROM specialists ORDER BY title'),
-    query('SELECT * FROM kiosk_settings WHERE id = 1'),
-    query('SELECT key, value FROM stats'),
+    db.query('SELECT * FROM leads ORDER BY datetime(created_at) DESC'),
+    db.query('SELECT * FROM categories ORDER BY title'),
+    db.query('SELECT * FROM brochures ORDER BY title'),
+    db.query('SELECT * FROM specialists ORDER BY title'),
+    db.query('SELECT * FROM kiosk_settings WHERE id = 1'),
+    db.query('SELECT key, value FROM stats'),
   ]);
 
   leadsCache       = leads.map(toLead);
@@ -157,10 +128,10 @@ async function loadAll(): Promise<void> {
     settingsCache = {
       idleTimeoutSeconds:           Number(r.idle_timeout_seconds)            || DEFAULT_SETTINGS.idleTimeoutSeconds,
       autoResetConfirmationSeconds: Number(r.auto_reset_confirmation_seconds) || DEFAULT_SETTINGS.autoResetConfirmationSeconds,
-      enableVirtualKeyboard:        !!Number(r.enable_virtual_keyboard),
-      totemFrameMode:               !!Number(r.totem_frame_mode),
-      companyName:  String(r.company_name  || DEFAULT_SETTINGS.companyName),
-      eventTitle:   String(r.event_title   || DEFAULT_SETTINGS.eventTitle),
+      enableVirtualKeyboard: !!Number(r.enable_virtual_keyboard),
+      totemFrameMode:        !!Number(r.totem_frame_mode),
+      companyName: String(r.company_name || DEFAULT_SETTINGS.companyName),
+      eventTitle:  String(r.event_title  || DEFAULT_SETTINGS.eventTitle),
     };
   }
 
@@ -176,15 +147,14 @@ async function loadAll(): Promise<void> {
 export function isStorageReady(): boolean { return storageReady; }
 
 export function initStorage(): Promise<void> {
-  if (storageReady)  return Promise.resolve();
-  if (initPromise)   return initPromise;
+  if (storageReady) return Promise.resolve();
+  if (initPromise)  return initPromise;
 
   initPromise = (async () => {
-    const health = await fetch(`${API}/health`);
-    if (!health.ok) throw new Error('Servidor no disponible en localhost:3001');
-    await loadAll();
+    await openDb();       // conecta al adaptador correcto según plataforma
+    await loadAll();      // carga todos los datos en cache
     storageReady = true;
-    console.info('[DB] totem-marco conectado y listo');
+    console.info('[DB] totem-marco listo');
     storageEvents.dispatchEvent(new Event('storageReady'));
   })().catch(err => {
     initPromise = null;
@@ -206,8 +176,7 @@ export function saveLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>): L
     status: 'Nuevo',
   };
   leadsCache = [l, ...leadsCache];
-
-  const sql = `INSERT OR REPLACE INTO leads (
+  getAdapter().execute(`INSERT OR REPLACE INTO leads (
     id, created_at, full_name, company, email, phone, position,
     category_id, category_name, brochure_id, brochure_title,
     requirement_type, requirement_detail, specialist_area,
@@ -225,18 +194,17 @@ export function saveLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>): L
     ${l.requirementType   ? `'${esc(l.requirementType)}'`   : 'NULL'},
     ${l.requirementDetail ? `'${esc(l.requirementDetail)}'` : 'NULL'},
     ${l.specialistArea    ? `'${esc(l.specialistArea)}'`    : 'NULL'},
-    ${l.authorizedTerms ? 1 : 0},'${esc(l.status)}','${esc(l.source ?? 'Biblioteca')}'
-  )`;
-
-  execute(sql).catch(err => console.error('[DB] saveLead:', err));
+    ${l.authorizedTerms ? 1 : 0},
+    '${esc(l.status)}','${esc(l.source ?? 'Biblioteca')}'
+  )`).catch(e => console.error('[DB] saveLead:', e));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
   return l;
 }
 
 export function updateLeadStatus(id: string, newStatus: Lead['status']): Lead[] {
   leadsCache = leadsCache.map(l => l.id === id ? { ...l, status: newStatus } : l);
-  execute(`UPDATE leads SET status = '${esc(newStatus)}' WHERE id = '${esc(id)}'`)
-    .catch(err => console.error('[DB] updateLeadStatus:', err));
+  getAdapter().execute(`UPDATE leads SET status = '${esc(newStatus)}' WHERE id = '${esc(id)}'`)
+    .catch(e => console.error('[DB] updateLeadStatus:', e));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
   return leadsCache;
 }
@@ -244,8 +212,8 @@ export function updateLeadStatus(id: string, newStatus: Lead['status']): Lead[] 
 export function deleteLead(id: string): boolean {
   if (!leadsCache.some(l => l.id === id)) return false;
   leadsCache = leadsCache.filter(l => l.id !== id);
-  execute(`DELETE FROM leads WHERE id = '${esc(id)}'`)
-    .catch(err => console.error('[DB] deleteLead:', err));
+  getAdapter().execute(`DELETE FROM leads WHERE id = '${esc(id)}'`)
+    .catch(e => console.error('[DB] deleteLead:', e));
   storageEvents.dispatchEvent(new Event('leadsChanged'));
   return true;
 }
@@ -257,7 +225,7 @@ export function getKioskSettings(): KioskSettings { return settingsCache; }
 export function saveKioskSettings(s: Partial<KioskSettings>): { settings: KioskSettings; saved: boolean } {
   settingsCache = { ...settingsCache, ...s };
   const c = settingsCache;
-  execute(`UPDATE kiosk_settings SET
+  getAdapter().execute(`UPDATE kiosk_settings SET
     idle_timeout_seconds = ${c.idleTimeoutSeconds},
     auto_reset_confirmation_seconds = ${c.autoResetConfirmationSeconds},
     enable_virtual_keyboard = ${c.enableVirtualKeyboard ? 1 : 0},
@@ -265,7 +233,7 @@ export function saveKioskSettings(s: Partial<KioskSettings>): { settings: KioskS
     company_name = '${esc(c.companyName)}',
     event_title = '${esc(c.eventTitle)}'
     WHERE id = 1`
-  ).catch(err => console.error('[DB] saveKioskSettings:', err));
+  ).catch(e => console.error('[DB] saveKioskSettings:', e));
   storageEvents.dispatchEvent(new Event('settingsChanged'));
   return { settings: settingsCache, saved: true };
 }
@@ -274,13 +242,13 @@ export function saveKioskSettings(s: Partial<KioskSettings>): { settings: KioskS
 
 export function recordBrochureView(): number {
   statsCache.views++;
-  execute(`UPDATE stats SET value = value + 1 WHERE key = 'brochure_views'`).catch(() => {});
+  getAdapter().execute(`UPDATE stats SET value = value + 1 WHERE key = 'brochure_views'`).catch(() => {});
   return statsCache.views;
 }
 
 export function recordNewSession(): number {
   statsCache.sessions++;
-  execute(`UPDATE stats SET value = value + 1 WHERE key = 'sessions'`).catch(() => {});
+  getAdapter().execute(`UPDATE stats SET value = value + 1 WHERE key = 'sessions'`).catch(() => {});
   return statsCache.sessions;
 }
 
@@ -303,7 +271,7 @@ export async function saveCategories(categories: Category[]): Promise<boolean> {
   const prev = categoriesCache;
   categoriesCache = categories;
   try {
-    const stmts = [
+    await getAdapter().batch([
       'DELETE FROM categories',
       ...categories.map(c => `INSERT INTO categories (
         id, code, title, subtitle, color, bg_light, banner_title,
@@ -315,13 +283,13 @@ export async function saveCategories(categories: Category[]): Promise<boolean> {
         '${esc(JSON.stringify(c.applications))}',
         ${c.brochureCount},'${esc(c.iconName)}'
       )`),
-    ];
-    await batch(stmts);
+    ]);
     storageEvents.dispatchEvent(new Event('categoriesChanged'));
     return true;
-  } catch (err) {
-    console.error('[DB] saveCategories:', err);
+  } catch (e) {
+    console.error('[DB] saveCategories:', e);
     categoriesCache = prev;
+    storageEvents.dispatchEvent(new Event('categoriesChanged'));
     return false;
   }
 }
@@ -334,7 +302,7 @@ export async function saveBrochures(brochures: Brochure[]): Promise<boolean> {
   const prev = brochuresCache;
   brochuresCache = brochures;
   try {
-    const stmts = [
+    await getAdapter().batch([
       'DELETE FROM brochures',
       ...brochures.map(b => `INSERT INTO brochures (
         id, category_id, title, pages, year_or_type, file_size,
@@ -348,13 +316,13 @@ export async function saveBrochures(brochures: Brochure[]): Promise<boolean> {
         ${b.coverImage ? `'${esc(b.coverImage)}'` : 'NULL'},
         '${esc(JSON.stringify(b.pageImages ?? []))}'
       )`),
-    ];
-    await batch(stmts);
+    ]);
     storageEvents.dispatchEvent(new Event('brochuresChanged'));
     return true;
-  } catch (err) {
-    console.error('[DB] saveBrochures:', err);
+  } catch (e) {
+    console.error('[DB] saveBrochures:', e);
     brochuresCache = prev;
+    storageEvents.dispatchEvent(new Event('brochuresChanged'));
     return false;
   }
 }
@@ -370,9 +338,8 @@ export function exportLeadsToXLSX(): void {
     N: i + 1, ID: l.id,
     'Fecha y Hora': new Date(l.createdAt).toLocaleString('es-PE'),
     'Nombre y Apellido': l.fullName, Empresa: l.company,
-    'Correo Corporativo': l.email,
-    'Teléfono / WhatsApp': l.phone || 'N/A', Cargo: l.position || 'N/A',
-    'Categoría de Interés': l.categoryName || 'General',
+    'Correo Corporativo': l.email, 'Teléfono / WhatsApp': l.phone || 'N/A',
+    Cargo: l.position || 'N/A', 'Categoría de Interés': l.categoryName || 'General',
     'Brochure Consultado': l.brochureTitle || 'N/A',
     'Tipo de Requerimiento': l.requirementType || 'N/A',
     'Detalle Requerimiento': l.requirementDetail || 'N/A',
@@ -387,14 +354,12 @@ export function exportLeadsToXLSX(): void {
 
 export function exportAllDataAsJSON(): void {
   const blob = new Blob([JSON.stringify({
-    leads: leadsCache, categories: categoriesCache,
-    brochures: brochuresCache, specialists: specialistsCache,
-    settings: settingsCache, stats: statsCache,
+    leads: leadsCache, categories: categoriesCache, brochures: brochuresCache,
+    specialists: specialistsCache, settings: settingsCache, stats: statsCache,
   }, null, 2)], { type: 'application/json' });
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
     download: `MARCO_Backup_${new Date().toISOString().split('T')[0]}.json`,
   });
   document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(a.href);
 }
