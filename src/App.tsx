@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Category, Brochure, Lead, KioskSettings, Specialist } from './types';
 import {
   initStorage,
@@ -474,6 +475,7 @@ export default function App() {
           onUpdateSettings={updateSettingsHandler}
         />
       )}
+      <SpeedInsights />
     </TotemFrameContainer>
   );
 }
