@@ -4,10 +4,14 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // Capacitor carga desde file:// → necesita rutas relativas ('./')
+  // Vercel / web normal → necesita rutas absolutas ('/')
+  const isCapacitor = process.env.VITE_BUILD_TARGET === 'capacitor';
+
   return {
-    // Rutas relativas — obligatorio para Capacitor (carga desde file://)
-    base: './',
+    // Rutas relativas para Capacitor (file://), absolutas para web/Vercel
+    base: isCapacitor ? './' : '/',
 
     plugins: [
       react(),
@@ -31,6 +35,28 @@ export default defineConfig(() => {
 
     build: {
       assetsInlineLimit: 0,
+      target: 'es2020',
+      minify: 'esbuild',
+      cssCodeSplit: true,
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/pdfjs-dist')) {
+              return 'vendor-pdfjs';
+            }
+            if (id.includes('node_modules/xlsx')) {
+              return 'vendor-xlsx';
+            }
+            if (id.includes('node_modules/lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+              return 'vendor-react';
+            }
+          },
+        },
+      },
     },
 
     server: {
@@ -41,6 +67,8 @@ export default defineConfig(() => {
         ignored: [
           '**/public/totem-marco**',
           '**/totem-marco**',
+          '**/public/pdfs/**',
+          '**/pdfs/**',
           '**/*.sqlite**',
           '**/*-journal**',
           '**/*-wal**',

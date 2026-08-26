@@ -1,10 +1,20 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
 import fs from 'fs';
+import path from 'path';
 import initSqlJs from 'sql.js';
 
 const SQL_FILE = 'sqlite.sql';
-const OUT_FILE = 'public/totem.marco.sqlite';
+const OUT_FILE = 'public/totem-marco';
+
+const TARGET_DESTINATIONS = [
+  'public/totem-marco',
+  'public/assets/databases/totem-marco.db',
+  'public/assets/databases/totem-marcoSQLite.db',
+  'android/app/src/main/assets/databases/totem-marco.db',
+  'android/app/src/main/assets/databases/totem-marcoSQLite.db',
+  'android/app/src/main/assets/public/totem-marco'
+];
 
 function fileExists(p) {
   try { return fs.existsSync(p); } catch { return false; }
@@ -15,99 +25,80 @@ if (!fileExists(SQL_FILE)) {
   process.exit(2);
 }
 
+function syncToTargets(sourceBuffer) {
+  for (const dest of TARGET_DESTINATIONS) {
+    try {
+      const destDir = path.dirname(dest);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+      fs.writeFileSync(dest, sourceBuffer);
+      console.log(`[SQLite Generator] Sincronizado a: ${dest} (${sourceBuffer.length} bytes)`);
+    } catch (err) {
+      console.warn(`[SQLite Generator] Aviso al escribir en ${dest}:`, err.message);
+    }
+  }
+
+  // Actualizar también db-data.ts con el base64 de la base de datos completa
+  try {
+    const base64 = sourceBuffer.toString('base64');
+    const dbDataContent = `// Base64 generado automáticamente desde sqlite.sql con 12 categorías, 20 brochures y 12 especialistas\nexport const DB_BASE64 = '${base64}';\n`;
+    fs.writeFileSync('src/data/db-data.ts', dbDataContent, 'utf8');
+    console.log('[SQLite Generator] Actualizado src/data/db-data.ts con la BD en base64');
+  } catch (err) {
+    console.warn('[SQLite Generator] Aviso al escribir src/data/db-data.ts:', err.message);
+  }
+}
+
+const outDir = path.dirname(OUT_FILE);
+if (!fs.existsSync(outDir)) {
+  fs.mkdirSync(outDir, { recursive: true });
+}
+
+// Eliminar archivo previo para generar uno limpio
+if (fs.existsSync(OUT_FILE)) {
+  try { fs.unlinkSync(OUT_FILE); } catch {}
+}
+
+let builtWithSystem = false;
 try {
-  // Try to use system sqlite3 if available
   execSync('which sqlite3', { stdio: 'ignore' });
-  console.log('Using system sqlite3 to build the .sqlite file...');
-  // Use shell redirection to load the SQL dump into a new database file
-  execSync(`sqlite3 ${OUT_FILE} < ${SQL_FILE}`, { stdio: 'inherit', shell: true });
-  console.log(`Created ${OUT_FILE} using system sqlite3.`);
+  console.log('[SQLite Generator] Usando sqlite3 del sistema...');
+  execSync(`sqlite3 "${OUT_FILE}" < "${SQL_FILE}"`, { stdio: 'inherit', shell: true });
+  console.log(`[SQLite Generator] Creado ${OUT_FILE} exitosamente con sqlite3.`);
+  const buf = fs.readFileSync(OUT_FILE);
+  syncToTargets(buf);
+  builtWithSystem = true;
   process.exit(0);
 } catch (e) {
-  console.log('System sqlite3 not available — falling back to sql.js (WASM)');
+  console.log('[SQLite Generator] sqlite3 no disponible en sistema — usando fallback sql.js (WASM)');
 }
 
-(async () => {
-  try {
-    const sqlText = fs.readFileSync(SQL_FILE, 'utf8');
-    const SQL = await initSqlJs();
-    const db = new SQL.Database();
-
+if (!builtWithSystem) {
+  (async () => {
     try {
-      db.exec(sqlText);
-    } catch (err) {
-      console.warn('db.exec failed for full dump, attempting to run statements one-by-one:', err.message);
-      const statements = sqlText.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
-      for (const st of statements) {
-        try { db.run(st); } catch (sErr) { /* continue on statement errors */ }
+      const sqlText = fs.readFileSync(SQL_FILE, 'utf8');
+      const SQL = await initSqlJs();
+      const db = new SQL.Database();
+
+      try {
+        db.exec(sqlText);
+      } catch (err) {
+        console.warn('[SQLite Generator] db.exec falló en bloque completo, ejecutando por sentencia:', err.message);
+        const statements = sqlText.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
+        for (const st of statements) {
+          try { db.run(st); } catch (sErr) { /* continuar */ }
+        }
       }
+
+      const data = db.export();
+      const buf = Buffer.from(data);
+      syncToTargets(buf);
+      console.log(`[SQLite Generator] Proceso completado exitosamente con sql.js.`);
+      process.exit(0);
+    } catch (err) {
+      console.error('[SQLite Generator] Error generando sqlite con sql.js:', err);
+      process.exit(3);
     }
-
-    const data = db.export();
-    fs.writeFileSync(OUT_FILE, Buffer.from(data));
-    console.log(`Wrote ${OUT_FILE} (${fs.statSync(OUT_FILE).size} bytes)`);
-    process.exit(0);
-  } catch (err) {
-    console.error('Failed to build sqlite file with sql.js fallback:', err);
-    process.exit(3);
-  }
-})();
-#!/usr/bin/env node
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-
-const inFile = process.argv[2] || 'sqlite.sql';
-const outFile = process.argv[3] || 'output/database.sqlite';
-
-if (!fs.existsSync(inFile)) {
-  console.error(`Input SQL file not found: ${inFile}`);
-  process.exit(1);
+  })();
 }
-
-// Ensure output directory exists
-const outDir = path.dirname(outFile);
-fs.mkdirSync(outDir, { recursive: true });
-
-function trySqlite3() {
-  try {
-    console.log('Trying system sqlite3...');
-    // Use sqlite3's .read command to execute the SQL file
-    execSync(`sqlite3 "${outFile}" ".read '${inFile.replace(/'/g, "'\"'\"'")}'"`, {
-      stdio: 'inherit',
-      shell: true,
-    });
-    console.log(`Database written to ${outFile} using system sqlite3.`);
-    return true;
-  } catch (err) {
-    console.warn('sqlite3 binary not usable or failed, falling back to sql.js if available.');
-    return false;
-  }
-}
-
-async function trySqlJs() {
-  try {
-    console.log('Trying sql.js fallback...');
-    const initSqlJs = require('sql.js');
-    const SQL = await initSqlJs();
-    const sql = fs.readFileSync(inFile, 'utf8');
-    const db = new SQL.Database();
-    db.run(sql);
-    const data = db.export();
-    fs.writeFileSync(outFile, Buffer.from(data));
-    console.log(`Database written to ${outFile} using sql.js.`);
-    return true;
-  } catch (err) {
-    console.error('sql.js fallback is not available or failed.');
-    console.error('Install it with: npm install sql.js');
-    console.error('Or install sqlite3 on your system (e.g., apt install sqlite3).');
-    return false;
-  }
-}
-
-(async () => {
-  const ok = trySqlite3();
-  if (ok) process.exit(0);
-  const ok2 = await trySqlJs();
-  if (!ok2) process.exit(2);
-})();

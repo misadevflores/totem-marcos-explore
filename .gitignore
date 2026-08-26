@@ -6,3 +6,25 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# PDFs del catálogo (482 MB — demasiado grandes para Vercel)
+# Úsalos solo en local. Para producción, ejecuta: npm run upload-pdfs
+catalogo_pdfs/
+
+# SQLite journal / WAL (archivos temporales de la BD)
+*-journal
+*-wal
+*-shm
+totem-marco-journal
+
+# Android build
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# Editor
+.vscode/
+.idea/
+Totem-MARCO-Explorer.apk*.apk
+*.apk
+public/pdfs/1787588257978_CATALOGO_EN_ESPA_OL_POWER_TEAM.pdf

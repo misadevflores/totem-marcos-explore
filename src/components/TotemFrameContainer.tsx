@@ -90,8 +90,14 @@ export const TotemFrameContainer: React.FC<TotemFrameContainerProps> = ({
       </div>
 
 {/* Main Content Render Area */}
-      <div className="flex-1 flex items-center justify-center p-0 overflow-hidden">
-        <div className="w-full h-full min-h-[90vh] bg-marco-card overflow-hidden flex flex-col">
+      <div className="flex-1 flex items-center justify-center p-0 overflow-hidden bg-brand-900/10">
+        <div 
+          className={`w-full h-full bg-marco-bg overflow-hidden flex flex-col transition-all duration-300 relative mx-auto ${
+            settings.totemFrameMode 
+              ? 'max-w-[1080px] shadow-[0_0_60px_rgba(0,0,0,0.15)]' 
+              : 'max-w-none'
+          }`}
+        >
           {children}
         </div>
       </div>

@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { Lead, KioskSettings, Category, Brochure } from '../types';
+
+GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 import {
   exportLeadsToXLSX as exportLeadsToExcel,
   updateLeadStatus,
   getAdminStats,
   saveKioskSettings,
+  resetToDefaultCatalog,
 } from '../utils/storage';
 import { resetDb } from '../utils/db';
 import {
@@ -54,6 +58,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [editingBrochure, setEditingBrochure] = useState<Brochure | null>(null);
   const [contentError, setContentError] = useState('');
   const [panelMessage, setPanelMessage] = useState<string | null>(null);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [pdfUploadStatus, setPdfUploadStatus] = useState<string | null>(null);
 
   const showPanelMessage = (msg: string) => {
     setPanelMessage(msg);
@@ -113,6 +119,26 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   };
 
+  const handleRestoreDefaultCatalog = async () => {
+    if (!window.confirm(
+      '¿Restaurar el catálogo completo de fábrica (12 categorías, 20 brochures, 12 especialistas)?\n\nEsto recargará todos los datos predeterminados en la base de datos y en la caché local.\n\n¿Deseas continuar?'
+    )) return;
+
+    try {
+      showPanelMessage('Restaurando catálogo por defecto...');
+      const ok = await resetToDefaultCatalog();
+      if (ok) {
+        onRefreshLeads();
+        showPanelMessage('¡Catálogo por defecto restaurado con éxito (12 Categorías, 20 PDFs)!');
+      } else {
+        showPanelMessage('No se pudo restaurar el catálogo por defecto.');
+      }
+    } catch (err) {
+      console.error('Error al restaurar catálogo por defecto:', err);
+      showPanelMessage('Error restaurando el catálogo.');
+    }
+  };
+
   const handleStatusChange = (leadId: string, status: 'Nuevo' | 'Asignado' | 'Contactado') => {
     try {
       updateLeadStatus(leadId, status);
@@ -142,27 +168,100 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setEditingBrochure(current => current ? { ...current, [field]: value } : current);
   };
 
-  const handlePdfUpload = (file?: File) => {
+  const handlePdfUpload = async (file?: File) => {
     if (!file || !editingBrochure) return;
-    if (file.type !== 'application/pdf') {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setContentError('Selecciona un archivo PDF válido.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      updateBrochureField('pdfUrl', String(reader.result));
-      updateBrochureField('fileSize', `${(file.size / 1024 / 1024).toFixed(1)} MB`);
-      setContentError('');
-    };
-    reader.onerror = () => setContentError('No se pudo leer el PDF.');
-    reader.readAsDataURL(file);
+
+    setIsUploadingPdf(true);
+    setPdfUploadStatus('Analizando archivo PDF...');
+    setContentError('');
+
+    try {
+      // 1. Detectar automáticamente el número de páginas del PDF con pdfjs-dist
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+      const detectedPages = pdfDoc.numPages;
+      const fileSizeFormatted = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+
+      setPdfUploadStatus(`Páginas detectadas: ${detectedPages}. Guardando archivo en disco...`);
+
+      // 2. Subir archivo a la carpeta /public/pdfs mediante el backend Express
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const base64Data = String(reader.result);
+          const response = await fetch('http://localhost:3001/api/upload-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: file.name,
+              base64Data,
+            }),
+          });
+
+          let pdfPath = '';
+          if (response.ok) {
+            const data = await response.json();
+            pdfPath = data.url; // e.g. "./pdfs/1724458921_nombre.pdf"
+          } else {
+            // Fallback en memoria si no está el backend Express
+            pdfPath = base64Data;
+          }
+
+          // 3. Actualizar campos del brochure: URL relativa a carpeta, páginas y tamaño detectados
+          setEditingBrochure(curr => curr ? {
+            ...curr,
+            pdfUrl: pdfPath,
+            pages: detectedPages,
+            fileSize: fileSizeFormatted,
+            title: curr.title ? curr.title : file.name.replace(/\.[^/.]+$/, ''),
+          } : curr);
+
+          setIsUploadingPdf(false);
+          setPdfUploadStatus(null);
+          showPanelMessage(`PDF subido correctamente: ${detectedPages} páginas detectadas (${fileSizeFormatted})`);
+        } catch (uploadErr) {
+          console.warn('[PDF Upload] Error subiendo al backend, usando fallback:', uploadErr);
+          setEditingBrochure(curr => curr ? {
+            ...curr,
+            pdfUrl: String(reader.result),
+            pages: detectedPages,
+            fileSize: fileSizeFormatted,
+            title: curr.title ? curr.title : file.name.replace(/\.[^/.]+$/, ''),
+          } : curr);
+          setIsUploadingPdf(false);
+          setPdfUploadStatus(null);
+          showPanelMessage(`PDF procesado: ${detectedPages} páginas detectadas`);
+        }
+      };
+      reader.onerror = () => {
+        setIsUploadingPdf(false);
+        setPdfUploadStatus(null);
+        setContentError('No se pudo leer el archivo PDF.');
+      };
+    } catch (err: any) {
+      console.error('Error procesando PDF:', err);
+      setIsUploadingPdf(false);
+      setPdfUploadStatus(null);
+      setContentError(`No se pudo analizar el PDF: ${err?.message || 'archivo corrupto o inválido'}`);
+    }
   };
 
   const saveCategoryForm = async () => {
     if (!editingCategory?.title.trim()) return setContentError('La categoría necesita un nombre.');
-    const next = categories.some(item => item.id === editingCategory.id)
-      ? categories.map(item => item.id === editingCategory.id ? editingCategory : item)
-      : [...categories, editingCategory];
+    // Filtrar líneas vacías del array de aplicaciones antes de guardar
+    const cleanedCategory: Category = {
+      ...editingCategory,
+      applications: editingCategory.applications.map(a => a.trim()).filter(a => a.length > 0),
+    };
+    const next = categories.some(item => item.id === cleanedCategory.id)
+      ? categories.map(item => item.id === cleanedCategory.id ? cleanedCategory : item)
+      : [...categories, cleanedCategory];
     const saved = await onCatalogChange(next, brochures);
     setEditingCategory(null);
     setContentError('');
@@ -400,7 +499,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   <h3 className="font-bold text-lg text-white">Catálogo offline</h3>
                   <p className="text-xs text-slate-400">Los cambios y los PDF se guardan en este dispositivo.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultCatalog}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/80 text-emerald-300 rounded-lg text-xs font-bold transition shadow-sm"
+                    title="Restaurar catálogo inicial completo (12 categorías, 20 PDFs)"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Restaurar catálogo base
+                  </button>
                   <button type="button" onClick={() => { setEditingCategory(emptyCategory()); setContentError(''); }} className="inline-flex items-center gap-2 px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg text-xs font-bold">
                     <Plus className="w-4 h-4" /> Nueva categoría
                   </button>
@@ -450,9 +557,40 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     </label>
 
                     <label className="space-y-2 md:col-span-2">
-                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Descripción</span>
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Descripción del banner</span>
                       <textarea value={editingCategory.bannerDescription} onChange={e => updateCategoryField('bannerDescription', e.target.value)} placeholder="Descripción" className={`${panelInputClass} min-h-24 resize-y`} />
                     </label>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Aplicaciones principales
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          Una por línea · {editingCategory.applications.filter(a => a.trim()).length} aplicaciones
+                        </span>
+                      </div>
+                      <textarea
+                        value={editingCategory.applications.join('\n')}
+                        onChange={e => {
+                          const lines = e.target.value.split('\n');
+                          updateCategoryField('applications', lines);
+                        }}
+                        placeholder={"Motores diésel de alta potencia y transmisiones\nSistemas hidráulicos de maquinaria de mina\nReductores, engranajes abiertos y mandos finales\nGrasas complejas de sulfonato de calcio y litio"}
+                        className={`${panelInputClass} min-h-[120px] resize-y font-mono text-xs leading-relaxed`}
+                      />
+                      {editingCategory.applications.some(a => a.trim()) && (
+                        <div className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-3 space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Vista previa</p>
+                          {editingCategory.applications.filter(a => a.trim()).map((app, idx) => (
+                            <div key={idx} className="flex items-start gap-2">
+                              <span className="w-4 h-4 rounded-full bg-red-800 text-white text-[9px] flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                              <span className="text-xs text-slate-300 leading-snug">{app}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-5 flex items-center justify-end gap-2">
@@ -507,10 +645,37 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       <textarea value={editingBrochure.description} onChange={e => updateBrochureField('description', e.target.value)} placeholder="Descripción" className={`${panelInputClass} min-h-24 resize-y`} />
                     </label>
 
-                    <label className="md:col-span-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-600 bg-slate-950/60 px-3 py-3 text-sm text-slate-300 transition hover:border-cyan-500 hover:bg-slate-950">
-                      <Upload className="w-5 h-5 text-cyan-400" />
-                      <span>{editingBrochure.pdfUrl ? `PDF cargado (${editingBrochure.fileSize || 'tamaño desconocido'})` : 'Seleccionar archivo PDF'}</span>
-                      <input type="file" accept="application/pdf,.pdf" onChange={e => handlePdfUpload(e.target.files?.[0])} className="hidden" />
+                    <label className="md:col-span-2 flex flex-col gap-2 rounded-xl border border-dashed border-slate-600 bg-slate-950/60 p-4 text-sm text-slate-300 transition hover:border-cyan-500 hover:bg-slate-950 cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <Upload className="w-5 h-5 text-cyan-400 shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-bold text-white">
+                            {editingBrochure.pdfUrl
+                              ? `PDF Guardado: ${editingBrochure.pdfUrl} (${editingBrochure.fileSize || 'tamaño desconocido'})`
+                              : 'Subir archivo PDF a la carpeta del tótem'}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            El archivo se guardará en la carpeta de disco y se detectarán las páginas automáticamente.
+                          </p>
+                        </div>
+                        {isUploadingPdf && (
+                          <span className="text-xs font-bold text-cyan-400 animate-pulse">
+                            Procesando...
+                          </span>
+                        )}
+                      </div>
+                      {pdfUploadStatus && (
+                        <p className="text-xs text-cyan-300 font-mono bg-cyan-950/60 p-2 rounded-lg border border-cyan-800">
+                          {pdfUploadStatus}
+                        </p>
+                      )}
+                      <input
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        disabled={isUploadingPdf}
+                        onChange={e => handlePdfUpload(e.target.files?.[0])}
+                        className="hidden"
+                      />
                     </label>
                   </div>
 
@@ -522,8 +687,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               )}
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Categorías ({categories.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{categories.map(category => <div key={category.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div><p className="font-bold text-white">{category.title}</p><p className="text-xs text-slate-400">{category.code} · {brochures.filter(item => item.categoryId === category.id).length} PDF</p></div><div className="flex gap-1"><button type="button" title="Editar categoría" onClick={() => setEditingCategory({ ...category })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar categoría" onClick={() => removeCategory(category.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
-                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Brochures / PDF ({brochures.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{brochures.map(brochure => <div key={brochure.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div className="min-w-0"><p className="font-bold text-white truncate">{brochure.title}</p><p className="text-xs text-slate-400 truncate">{categories.find(item => item.id === brochure.categoryId)?.title || 'Sin categoría'} · {brochure.pdfUrl ? 'PDF cargado' : 'Sin PDF'}</p></div><div className="flex gap-1"><button type="button" title="Editar brochure" onClick={() => setEditingBrochure({ ...brochure })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar brochure" onClick={() => removeBrochure(brochure.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
+                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Categorías ({categories.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{[...categories].sort((a, b) => { const na = parseInt(a.code, 10) || 0; const nb = parseInt(b.code, 10) || 0; return na !== nb ? na - nb : a.code.localeCompare(b.code); }).map(category => <div key={category.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div><p className="font-bold text-white">{category.code} · {category.title}</p><p className="text-xs text-slate-400">{brochures.filter(item => item.categoryId === category.id).length} PDF</p></div><div className="flex gap-1"><button type="button" title="Editar categoría" onClick={() => setEditingCategory({ ...category })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar categoría" onClick={() => removeCategory(category.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
+                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Brochures / PDF ({brochures.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{(() => { const codeOf: Record<string, number> = {}; categories.forEach(c => { codeOf[c.id] = parseInt(c.code, 10) || 0; }); return [...brochures].sort((a, b) => { const ca = codeOf[a.categoryId] ?? 999; const cb = codeOf[b.categoryId] ?? 999; return ca !== cb ? ca - cb : a.title.localeCompare(b.title); }); })().map(brochure => <div key={brochure.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div className="min-w-0"><p className="font-bold text-white truncate">{brochure.title}</p><p className="text-xs text-slate-400 truncate">{categories.find(item => item.id === brochure.categoryId)?.title || 'Sin categoría'} · {brochure.pdfUrl ? 'PDF cargado' : 'Sin PDF'}</p></div><div className="flex gap-1"><button type="button" title="Editar brochure" onClick={() => setEditingBrochure({ ...brochure })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar brochure" onClick={() => removeBrochure(brochure.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
               </div>
             </div>
           )}
@@ -580,6 +745,27 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     }`}
                   >
                     {settings.totemFrameMode ? 'Marco Activo' : 'Pantalla Completa'}
+                  </button>
+                </div>
+
+                {/* Restore Default Catalog & Cache */}
+                <div className="flex items-center justify-between border-t border-slate-700/80 pt-4">
+                  <div>
+                    <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                      <Database className="w-4 h-4 text-emerald-400" />
+                      Caché y Restauración de Catálogo por Defecto
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Puebla la base de datos y la caché local con las 12 categorías, 20 brochures y 12 especialistas oficiales.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultCatalog}
+                    className="inline-flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl border border-emerald-600/80 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 transition shadow-lg shadow-emerald-950/20 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Restaurar Datos por Defecto
                   </button>
                 </div>
               </div>

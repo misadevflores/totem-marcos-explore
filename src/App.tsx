@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Category, Brochure, Lead, KioskSettings, Specialist } from './types';
 import {
   initStorage,
+  isStorageReady,
   getKioskSettings as getStoredSettings,
   saveKioskSettings as saveKioskSettingsRaw,
   getStoredLeads,
@@ -17,7 +18,6 @@ import {
 } from './utils/storage';
 import { TotemFrameContainer } from './components/TotemFrameContainer';
 import { TotemHeader } from './components/TotemHeader';
-import { PdfViewerModal } from './components/PdfViewerModal';
 
 import { AttractionScreen } from './views/AttractionScreen';
 import { HomeCategoriesView } from './views/HomeCategoriesView';
@@ -27,8 +27,10 @@ import { LeadFormView } from './views/LeadFormView';
 import { NotFoundRouteView } from './views/NotFoundRouteView';
 import { SpecialistRouteView } from './views/SpecialistRouteView';
 import { ConfirmationView } from './views/ConfirmationView';
-import { AdminPanelModal } from './views/AdminPanelModal';
-import { AdminAuthModal } from './components/AdminAuthModal';
+
+const PdfViewerModal = React.lazy(() => import('./components/PdfViewerModal').then(m => ({ default: m.PdfViewerModal })));
+const AdminPanelModal = React.lazy(() => import('./views/AdminPanelModal').then(m => ({ default: m.AdminPanelModal })));
+const AdminAuthModal = React.lazy(() => import('./components/AdminAuthModal').then(m => ({ default: m.AdminAuthModal })));
 
 type ViewState =
   | 'attraction'
@@ -41,13 +43,13 @@ type ViewState =
   | 'confirmation';
 
 export default function App() {
-  const [storageReady, setStorageReady] = useState(false);
+  const [storageReady, setStorageReady] = useState(isStorageReady());
   const [storageError, setStorageError] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('attraction');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brochures, setBrochures] = useState<Brochure[]>([]);
-  const [specialists, setSpecialists] = useState<Specialist[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [categories, setCategories] = useState<Category[]>(getStoredCategories());
+  const [brochures, setBrochures] = useState<Brochure[]>(getStoredBrochures());
+  const [specialists, setSpecialists] = useState<Specialist[]>(getStoredSpecialists());
+  const [leads, setLeads] = useState<Lead[]>(getStoredLeads());
   const [settings, setSettings] = useState<KioskSettings>(getStoredSettings());
 
   // Navigation Context State
@@ -228,7 +230,7 @@ export default function App() {
   const handleSubmitLead = async (leadData: Omit<Lead, 'id' | 'createdAt' | 'status'>) => {
     handleUserActivity();
     try {
-      const newLead = saveLead(leadData);
+      const newLead = await saveLead(leadData);
       setLeads(getStoredLeads());
       setSubmittedLead(newLead);
       setViewState('confirmation');
@@ -243,7 +245,7 @@ export default function App() {
 
   const updateSettingsHandler = async (newPartial: Partial<KioskSettings>) => {
     try {
-      const { settings: updated, saved } = saveKioskSettingsRaw(newPartial);
+      const { settings: updated, saved } = await saveKioskSettingsRaw(newPartial);
       setSettings(updated);
       return saved;
     } catch (err) {
@@ -429,51 +431,51 @@ export default function App() {
         </div>
       )}
 
-      {/* PDF Interactive Viewer Modal */}
-      {showPdfModal && activePdfBrochure && (
-        <PdfViewerModal
-          brochure={activePdfBrochure}
-          category={categories.find(c => c.id === activePdfBrochure.categoryId)}
-          onClose={() => setShowPdfModal(false)}
-          onSendToEmail={handleSendBrochureFromPdf}
-          onRequestSpecialist={handleRequestAdviceFromPdf}
-        />
-      )}
+      <React.Suspense fallback={null}>
+        {/* PDF Interactive Viewer Modal */}
+        {showPdfModal && activePdfBrochure && (
+          <PdfViewerModal
+            brochure={activePdfBrochure}
+            category={categories.find(c => c.id === activePdfBrochure.categoryId)}
+            onClose={() => setShowPdfModal(false)}
+            onSendToEmail={handleSendBrochureFromPdf}
+            onRequestSpecialist={handleRequestAdviceFromPdf}
+          />
+        )}
 
-      {/* Admin Panel Modal */}
-      {showAdminAuth && (
-        <AdminAuthModal
-          onClose={() => setShowAdminAuth(false)}
-          onSuccess={() => {
-            setShowAdminAuth(false);
-            setAdminAuthenticated(true);
-            setShowAdminModal(true);
-          }}
-        />
-      )}
+        {/* Admin Panel Modal */}
+        {showAdminAuth && (
+          <AdminAuthModal
+            onClose={() => setShowAdminAuth(false)}
+            onSuccess={() => {
+              setShowAdminAuth(false);
+              setAdminAuthenticated(true);
+              setShowAdminModal(true);
+            }}
+          />
+        )}
 
-      {showAdminModal && (
-        <AdminPanelModal
-          leads={leads}
-          categories={categories}
-          brochures={brochures}
-          settings={settings}
-          onClose={closeAdmin}
-          onRefreshLeads={() => setLeads(getStoredLeads())}
-          onCatalogChange={async (nextCategories, nextBrochures) => {
-            const [catOk, broOk] = await Promise.all([
-              saveCategories(nextCategories),
-              saveBrochures(nextBrochures),
-            ]);
-            // Los storageEvents ya actualizan el estado via listeners
-            // Solo forzamos update si hubo éxito
-            if (catOk) setCategories(getStoredCategories());
-            if (broOk) setBrochures(getStoredBrochures());
-            return catOk && broOk;
-          }}
-          onUpdateSettings={updateSettingsHandler}
-        />
-      )}
+        {showAdminModal && (
+          <AdminPanelModal
+            leads={leads}
+            categories={categories}
+            brochures={brochures}
+            settings={settings}
+            onClose={closeAdmin}
+            onRefreshLeads={() => setLeads(getStoredLeads())}
+            onCatalogChange={async (nextCategories, nextBrochures) => {
+              const catOk = await saveCategories(nextCategories);
+              const broOk = await saveBrochures(nextBrochures);
+              // Los storageEvents ya actualizan el estado via listeners
+              // Solo forzamos update si hubo éxito
+              if (catOk) setCategories(getStoredCategories());
+              if (broOk) setBrochures(getStoredBrochures());
+              return catOk && broOk;
+            }}
+            onUpdateSettings={updateSettingsHandler}
+          />
+        )}
+      </React.Suspense>
     </TotemFrameContainer>
   );
 }

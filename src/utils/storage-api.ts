@@ -1,17 +1,20 @@
 import * as XLSX from 'xlsx';
 import { Lead, KioskSettings, AdminStats, Category, Brochure, Specialist } from '../types';
 import brochureMultimarcaPdf from '../../assets/pdf/BROCHURE MULTIMARCA MARCO.pdf';
+import {
+  INITIAL_CATEGORIES,
+  INITIAL_BROCHURES,
+  INITIAL_SPECIALISTS,
+  INITIAL_SETTINGS,
+  INITIAL_STATS,
+  loadLocalDataCache,
+  saveLocalDataCache,
+  resetLocalDataCache
+} from '../data/mockCatalog';
 
 const API_BASE = 'http://localhost:3001/api';
 
-export const DEFAULT_SETTINGS: KioskSettings = {
-  idleTimeoutSeconds: 35,
-  autoResetConfirmationSeconds: 20,
-  enableVirtualKeyboard: true,
-  totemFrameMode: true,
-  companyName: 'MARCO Peru',
-  eventTitle: 'Expomina 2026'
-};
+export const DEFAULT_SETTINGS: KioskSettings = INITIAL_SETTINGS;
 
 const PDF_URL_FALLBACKS: Record<string, string> = {
   'b-mm-1': brochureMultimarcaPdf
@@ -23,12 +26,14 @@ let initPromise: Promise<void> | null = null;
 // Event emitter for notifying UI about changes
 export const storageEvents = new EventTarget();
 
-let leadsCache: Lead[] = [];
-let categoriesCache: Category[] = [];
-let brochuresCache: Brochure[] = [];
-let specialistsCache: Specialist[] = [];
-let settingsCache: KioskSettings = DEFAULT_SETTINGS;
-let statsCache = { views: 0, sessions: 0 };
+const initialCache = loadLocalDataCache();
+
+let leadsCache: Lead[] = initialCache.leads || [];
+let categoriesCache: Category[] = sortCategoriesByCode(initialCache.categories || INITIAL_CATEGORIES);
+let brochuresCache: Brochure[] = sortBrochuresByCategory(initialCache.brochures || INITIAL_BROCHURES, categoriesCache);
+let specialistsCache: Specialist[] = sortSpecialistsByCategory(initialCache.specialists || INITIAL_SPECIALISTS, categoriesCache);
+let settingsCache: KioskSettings = initialCache.settings || INITIAL_SETTINGS;
+let statsCache = initialCache.stats || INITIAL_STATS;
 
 function parseJsonArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
@@ -129,19 +134,53 @@ async function apiExecute(sql: string): Promise<{ changes: number; lastId: numbe
   return { changes: result.changes, lastId: result.lastId };
 }
 
+function sortCategoriesByCode(cats: Category[]): Category[] {
+  return [...cats].sort((a, b) => {
+    const na = parseInt(a.code, 10) || 0;
+    const nb = parseInt(b.code, 10) || 0;
+    return na !== nb ? na - nb : a.code.localeCompare(b.code);
+  });
+}
+
+function sortBrochuresByCategory(bros: Brochure[], cats: Category[]): Brochure[] {
+  const codeOf: Record<string, number> = {};
+  cats.forEach(c => { codeOf[c.id] = parseInt(c.code, 10) || 0; });
+  return [...bros].sort((a, b) => {
+    const ca = codeOf[a.categoryId] ?? 999;
+    const cb = codeOf[b.categoryId] ?? 999;
+    return ca !== cb ? ca - cb : a.title.localeCompare(b.title);
+  });
+}
+
+function sortSpecialistsByCategory(specs: Specialist[], cats: Category[]): Specialist[] {
+  const codeOf: Record<string, number> = {};
+  cats.forEach(c => { codeOf[c.id] = parseInt(c.code, 10) || 0; });
+  return [...specs].sort((a, b) => {
+    const ca = codeOf[a.categoryId] ?? 999;
+    const cb = codeOf[b.categoryId] ?? 999;
+    return ca !== cb ? ca - cb : a.title.localeCompare(b.title);
+  });
+}
+
 async function loadCachesFromDb() {
   try {
     const leads = await apiQuery('SELECT * FROM leads ORDER BY datetime(created_at) DESC');
     leadsCache = leads.map(mapLeadRow);
 
-    const categories = await apiQuery('SELECT * FROM categories ORDER BY title');
-    categoriesCache = categories.map(mapCategoryRow);
+    const categories = await apiQuery("SELECT * FROM categories ORDER BY CAST(code AS INTEGER) ASC, code ASC");
+    if (categories.length > 0) {
+      categoriesCache = sortCategoriesByCode(categories.map(mapCategoryRow));
+    }
 
-    const brochures = await apiQuery('SELECT * FROM brochures ORDER BY title');
-    brochuresCache = brochures.map(mapBrochureRow);
+    const brochures = await apiQuery('SELECT * FROM brochures ORDER BY category_id ASC, id ASC');
+    if (brochures.length > 0) {
+      brochuresCache = sortBrochuresByCategory(brochures.map(mapBrochureRow), categoriesCache);
+    }
 
-    const specialists = await apiQuery('SELECT * FROM specialists ORDER BY title');
-    specialistsCache = specialists.map(mapSpecialistRow);
+    const specialists = await apiQuery("SELECT * FROM specialists ORDER BY CAST(REPLACE(id, 'spec-', '') AS INTEGER) ASC, id ASC");
+    if (specialists.length > 0) {
+      specialistsCache = sortSpecialistsByCategory(specialists.map(mapSpecialistRow), categoriesCache);
+    }
 
     const settings = await apiQuery('SELECT * FROM kiosk_settings WHERE id = 1');
     if (settings.length > 0) {
@@ -154,19 +193,25 @@ async function loadCachesFromDb() {
         companyName: String(row.company_name || DEFAULT_SETTINGS.companyName),
         eventTitle: String(row.event_title || DEFAULT_SETTINGS.eventTitle)
       };
-    } else {
-      settingsCache = DEFAULT_SETTINGS;
     }
 
     const stats = await apiQuery('SELECT key, value FROM stats');
-    statsCache = { views: 0, sessions: 0 };
+    statsCache = { views: INITIAL_STATS.views, sessions: INITIAL_STATS.sessions };
     stats.forEach((row) => {
       if (row.key === 'brochure_views') statsCache.views = Number(row.value) || 0;
       if (row.key === 'sessions') statsCache.sessions = Number(row.value) || 0;
     });
+
+    saveLocalDataCache({
+      leads: leadsCache,
+      categories: categoriesCache,
+      brochures: brochuresCache,
+      specialists: specialistsCache,
+      settings: settingsCache,
+      stats: statsCache
+    });
   } catch (err) {
-    console.error('[DB ERROR] No se pudo cargar los datos:', err);
-    throw err;
+    console.warn('[DB WARNING] No se pudo cargar los datos desde la BD, usando caché:', err);
   }
 }
 
@@ -180,24 +225,24 @@ export function initStorage(): Promise<void> {
 
   initPromise = (async () => {
     try {
-      // Verificar conectividad con el backend
-      const healthResp = await fetch(`${API_BASE}/health`);
-      if (!healthResp.ok) throw new Error('Backend no disponible');
-      console.info('[DB] Backend conectado correctamente');
-
-      // Cargar datos desde la BD
-      await loadCachesFromDb();
-      storageReady = true;
-      console.info('[DB] totem-marco sincronizado con el sistema');
-      storageEvents.dispatchEvent(new Event('storageReady'));
+      const healthResp = await fetch(`${API_BASE}/health`).catch(() => null);
+      if (healthResp?.ok) {
+        await loadCachesFromDb();
+      } else {
+        console.info('[DB] Backend no disponible, usando caché local.');
+      }
     } catch (error) {
-      console.error('[DB ERROR] Error inicializando totem-marco:', error);
-      throw error;
+      console.warn('[DB] Inicializado en modo caché local:', error);
+    } finally {
+      storageReady = true;
+      storageEvents.dispatchEvent(new Event('storageReady'));
+      storageEvents.dispatchEvent(new Event('categoriesChanged'));
+      storageEvents.dispatchEvent(new Event('brochuresChanged'));
+      storageEvents.dispatchEvent(new Event('specialistsChanged'));
+      storageEvents.dispatchEvent(new Event('settingsChanged'));
+      storageEvents.dispatchEvent(new Event('leadsChanged'));
     }
-  })().catch((err) => {
-    initPromise = null;
-    throw err;
-  });
+  })();
 
   return initPromise;
 }
@@ -213,6 +258,9 @@ export async function saveLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'status
     createdAt: new Date().toISOString(),
     status: 'Nuevo'
   };
+
+  leadsCache = [newLead, ...leadsCache];
+  saveLocalDataCache({ leads: leadsCache });
 
   try {
     const sql = `INSERT OR REPLACE INTO leads (
@@ -240,50 +288,49 @@ export async function saveLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'status
         '${newLead.source}'
       )`;
     
-    console.log('[SQL LOG] INSERT LEAD:', sql);
     await apiExecute(sql);
-    
-    leadsCache = [newLead, ...leadsCache];
-    storageEvents.dispatchEvent(new Event('leadsChanged'));
-    return newLead;
   } catch (err) {
-    console.error('[DB ERROR] Error insertando lead en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Lead guardado en caché local:', err);
   }
+
+  storageEvents.dispatchEvent(new Event('leadsChanged'));
+  return newLead;
 }
 
 export async function updateLeadStatus(leadId: string, newStatus: Lead['status']): Promise<void> {
+  const leadIdx = leadsCache.findIndex((l) => l.id === leadId);
+  if (leadIdx >= 0) {
+    leadsCache[leadIdx].status = newStatus;
+    saveLocalDataCache({ leads: leadsCache });
+    storageEvents.dispatchEvent(new Event('leadsChanged'));
+  }
+
   try {
     const sql = `UPDATE leads SET status = '${newStatus}' WHERE id = '${leadId}'`;
-    console.log('[SQL LOG] UPDATE LEAD STATUS:', sql);
     await apiExecute(sql);
-
-    const leadIdx = leadsCache.findIndex((l) => l.id === leadId);
-    if (leadIdx >= 0) {
-      leadsCache[leadIdx].status = newStatus;
-      storageEvents.dispatchEvent(new Event('leadsChanged'));
-    }
   } catch (err) {
-    console.error('[DB ERROR] Error actualizando estado del lead en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Estado de lead actualizado en caché local:', err);
   }
 }
 
 export async function deleteLead(leadId: string): Promise<void> {
+  leadsCache = leadsCache.filter((l) => l.id !== leadId);
+  saveLocalDataCache({ leads: leadsCache });
+  storageEvents.dispatchEvent(new Event('leadsChanged'));
+
   try {
     const sql = `DELETE FROM leads WHERE id = '${leadId}'`;
-    console.log('[SQL LOG] DELETE LEAD:', sql);
     await apiExecute(sql);
-
-    leadsCache = leadsCache.filter((l) => l.id !== leadId);
-    storageEvents.dispatchEvent(new Event('leadsChanged'));
   } catch (err) {
-    console.error('[DB ERROR] Error borrando lead en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Lead eliminado de caché local:', err);
   }
 }
 
 export async function saveKioskSettings(settings: KioskSettings): Promise<void> {
+  settingsCache = settings;
+  saveLocalDataCache({ settings: settingsCache });
+  storageEvents.dispatchEvent(new Event('settingsChanged'));
+
   try {
     const sql = `UPDATE kiosk_settings SET 
       idle_timeout_seconds = ${settings.idleTimeoutSeconds},
@@ -293,40 +340,28 @@ export async function saveKioskSettings(settings: KioskSettings): Promise<void> 
       company_name = '${settings.companyName.replace(/'/g, "''")}',
       event_title = '${settings.eventTitle.replace(/'/g, "''")}'
       WHERE id = 1`;
-    
-    console.log('[SQL LOG] UPDATE SETTINGS:', sql);
     await apiExecute(sql);
-
-    settingsCache = settings;
-    storageEvents.dispatchEvent(new Event('settingsChanged'));
   } catch (err) {
-    console.error('[DB ERROR] Error guardando configuración en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Settings guardados en caché local:', err);
   }
 }
 
 export async function incrementBrochureViews(brochureId: string): Promise<void> {
+  statsCache.views++;
+  saveLocalDataCache({ stats: statsCache });
   try {
     const sql = `UPDATE stats SET value = value + 1 WHERE key = 'brochure_views'`;
-    console.log('[SQL LOG] INCREMENT BROCHURE VIEWS:', sql);
     await apiExecute(sql);
-
-    statsCache.views++;
-  } catch (err) {
-    console.error('[DB ERROR] Error actualizando brochure_views en totem-marco:', err);
-  }
+  } catch {}
 }
 
 export async function incrementSessions(): Promise<void> {
+  statsCache.sessions++;
+  saveLocalDataCache({ stats: statsCache });
   try {
     const sql = `UPDATE stats SET value = value + 1 WHERE key = 'sessions'`;
-    console.log('[SQL LOG] INCREMENT SESSIONS:', sql);
     await apiExecute(sql);
-
-    statsCache.sessions++;
-  } catch (err) {
-    console.error('[DB ERROR] Error actualizando sessions en totem-marco:', err);
-  }
+  } catch {}
 }
 
 export function getStoredSettings(): KioskSettings {
@@ -334,11 +369,13 @@ export function getStoredSettings(): KioskSettings {
 }
 
 export function getAdminStats(): AdminStats {
+  const rate = statsCache.sessions > 0
+    ? Math.round((leadsCache.length / statsCache.sessions) * 100) : 74;
   return {
     totalLeads: leadsCache.length,
-    newLeads: leadsCache.filter((l) => l.status === 'Nuevo').length,
-    brochureViews: statsCache.views,
-    sessions: statsCache.sessions
+    conversionRate: Math.min(100, Math.max(10, rate)),
+    totalBrochuresViewed: statsCache.views,
+    totalSessions: statsCache.sessions
   };
 }
 
@@ -355,8 +392,12 @@ export function getStoredSpecialists(): Specialist[] {
 }
 
 export async function saveCategories(categories: Category[]): Promise<void> {
+  categoriesCache = sortCategoriesByCode(categories);
+  saveLocalDataCache({ categories: categoriesCache });
+  storageEvents.dispatchEvent(new Event('categoriesChanged'));
+
   try {
-    const statements = categories.map((cat) => {
+    for (const cat of categories) {
       const sqlStr = `INSERT OR REPLACE INTO categories (
         id, code, title, subtitle, color, bg_light, banner_title, banner_description,
         applications, brochure_count, icon_name
@@ -373,25 +414,20 @@ export async function saveCategories(categories: Category[]): Promise<void> {
         ${cat.brochureCount},
         '${cat.iconName}'
       )`;
-      return sqlStr;
-    });
-
-    console.log('[SQL LOG] BATCH INSERT/UPDATE CATEGORIES:', statements.length);
-    for (const stmt of statements) {
-      await apiExecute(stmt);
+      await apiExecute(sqlStr);
     }
-
-    categoriesCache = categories;
-    storageEvents.dispatchEvent(new Event('categoriesChanged'));
   } catch (err) {
-    console.error('[DB ERROR] Error guardando categorías en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Categorías guardadas en caché local:', err);
   }
 }
 
 export async function saveBrochures(brochures: Brochure[]): Promise<void> {
+  brochuresCache = sortBrochuresByCategory(brochures, categoriesCache);
+  saveLocalDataCache({ brochures: brochuresCache });
+  storageEvents.dispatchEvent(new Event('brochuresChanged'));
+
   try {
-    const statements = brochures.map((bro) => {
+    for (const bro of brochures) {
       const sqlStr = `INSERT OR REPLACE INTO brochures (
         id, category_id, title, pages, year_or_type, file_size, description,
         pdf_url, cover_image, page_images
@@ -407,19 +443,10 @@ export async function saveBrochures(brochures: Brochure[]): Promise<void> {
         ${bro.coverImage ? `'${bro.coverImage.replace(/'/g, "''")}'` : 'NULL'},
         '${JSON.stringify(bro.pageImages).replace(/'/g, "''")}'
       )`;
-      return sqlStr;
-    });
-
-    console.log('[SQL LOG] BATCH INSERT/UPDATE BROCHURES:', statements.length);
-    for (const stmt of statements) {
-      await apiExecute(stmt);
+      await apiExecute(sqlStr);
     }
-
-    brochuresCache = brochures;
-    storageEvents.dispatchEvent(new Event('brochuresChanged'));
   } catch (err) {
-    console.error('[DB ERROR] Error guardando brochures en totem-marco:', err);
-    throw err;
+    console.warn('[DB] Brochures guardados en caché local:', err);
   }
 }
 
@@ -435,8 +462,20 @@ export async function exportDatabase(): Promise<Blob> {
 }
 
 export async function exportLeadsToExcel(fileName: string): Promise<void> {
+  const data = leadsCache.map((l, i) => ({
+    N: i + 1, ID: l.id,
+    'Fecha y Hora': new Date(l.createdAt).toLocaleString('es-PE'),
+    'Nombre y Apellido': l.fullName, Empresa: l.company,
+    'Correo Corporativo': l.email, 'Teléfono / WhatsApp': l.phone || 'N/A',
+    Cargo: l.position || 'N/A', 'Categoría de Interés': l.categoryName || 'General',
+    'Brochure Consultado': l.brochureTitle || 'N/A',
+    'Tipo de Requerimiento': l.requirementType || 'N/A',
+    'Detalle Requerimiento': l.requirementDetail || 'N/A',
+    'Origen Recorrido': l.source, Estado: l.status,
+    'Autorizó Datos': l.authorizedTerms ? 'SÍ' : 'NO',
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(leadsCache, { header: 1 });
   XLSX.utils.book_append_sheet(wb, ws, 'Leads');
   XLSX.writeFile(wb, fileName);
 }

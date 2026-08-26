@@ -1,6 +1,6 @@
 import React from 'react';
 import { Category, Brochure } from '../types';
-import { FileText, ArrowRight, UserCheck, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { FileText, ArrowRight, UserCheck, CheckCircle2 } from 'lucide-react';
 
 interface CategoryDetailViewProps {
   category: Category;
@@ -18,6 +18,8 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
   onOpenSingleBrochure
 }) => {
   const categoryBrochures = brochures.filter(b => b.categoryId === category.id);
+  // Filtrar líneas vacías — por si la BD tiene entradas huérfanas tras edición
+  const applications = (category.applications ?? []).filter(a => a.trim().length > 0);
 
   return (
     <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto">
@@ -42,12 +44,16 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
         </h3>
 
         <div className="bg-white p-5 rounded-xl border border-marco-border space-y-2.5 shadow-sm">
-          {category.applications.map((app, idx) => (
-            <div key={idx} className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-accent-600 shrink-0 mt-0.5" />
-              <span className="text-sm text-brand-700 font-medium leading-snug">{app}</span>
-            </div>
-          ))}
+          {applications.length === 0 ? (
+            <p className="text-sm text-brand-400 italic">Sin aplicaciones configuradas.</p>
+          ) : (
+            applications.map((app, idx) => (
+              <div key={idx} className="flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-accent-600 shrink-0 mt-0.5" />
+                <span className="text-sm text-brand-700 font-medium leading-snug">{app}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -107,3 +113,4 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
     </div>
   );
 };
+

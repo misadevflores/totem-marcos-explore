@@ -11,10 +11,17 @@ export const SpecialistRouteView: React.FC<SpecialistRouteViewProps> = ({
   specialists,
   onSelectSpecialist
 }) => {
-  const [selectedSpec, setSelectedSpec] = useState<Specialist | null>(specialists[0] ?? null);
+  // Ordenar especialistas por el código numérico implícito en su ID (spec-1 ... spec-12)
+  const sortedSpecialists = [...specialists].sort((a, b) => {
+    const na = parseInt(a.id.replace('spec-', ''), 10) || 0;
+    const nb = parseInt(b.id.replace('spec-', ''), 10) || 0;
+    return na !== nb ? na - nb : a.title.localeCompare(b.title);
+  });
+
+  const [selectedSpec, setSelectedSpec] = useState<Specialist | null>(sortedSpecialists[0] ?? null);
 
   useEffect(() => {
-    setSelectedSpec(specialists[0] ?? null);
+    setSelectedSpec(sortedSpecialists[0] ?? null);
   }, [specialists]);
 
   if (!selectedSpec) {
@@ -42,7 +49,7 @@ export const SpecialistRouteView: React.FC<SpecialistRouteViewProps> = ({
 
       {/* Area Cards List (Wireframe Page 10) */}
       <div className="space-y-3 my-auto">
-        {specialists.map((spec) => {
+        {sortedSpecialists.map((spec) => {
           const isSelected = selectedSpec.id === spec.id;
           return (
             <div

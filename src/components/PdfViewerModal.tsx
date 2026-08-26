@@ -5,6 +5,16 @@ import { Brochure, Category } from '../types';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
+const docCache = new Map<string, any>();
+
+async function getCachedPdfDocument(url: string) {
+  if (docCache.has(url)) return docCache.get(url);
+  const loadingTask = getDocument(url);
+  const doc = await loadingTask.promise;
+  docCache.set(url, doc);
+  return doc;
+}
+
 interface PdfPageCanvasProps {
   pdfUrl: string;
   pageNumber: number;
@@ -20,11 +30,11 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
   useEffect(() => {
     let cancelled = false;
     let renderTask: { cancel: () => void; promise: Promise<unknown> } | undefined;
-    const loadingTask = getDocument(pdfUrl);
 
     setStatus('loading');
-    loadingTask.promise
+    getCachedPdfDocument(pdfUrl)
       .then(async (pdf) => {
+        if (cancelled) return;
         const page = await pdf.getPage(pageNumber);
         if (cancelled || !canvasRef.current || !containerRef.current) return;
 
@@ -33,19 +43,21 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
         const scale = Math.max(0.5, (availableWidth / baseViewport.width) * zoom);
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', { alpha: false });
         if (!context) throw new Error('No se pudo preparar el canvas del PDF.');
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
+
         renderTask = page.render({ canvas, canvasContext: context, viewport });
         await renderTask.promise;
         if (!cancelled) setStatus('ready');
       })
       .catch((error: unknown) => {
         if (!cancelled && (error as { name?: string }).name !== 'RenderingCancelledException') {
+          console.warn('[PDF Render]', error);
           setStatus('error');
         }
       });
@@ -53,7 +65,6 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
     return () => {
       cancelled = true;
       renderTask?.cancel();
-      void loadingTask.destroy();
     };
   }, [pageNumber, pdfUrl, zoom]);
 
@@ -143,7 +154,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           <div className="flex-1 min-h-0 overflow-auto bg-slate-700 p-2 md:p-5 flex justify-center">
             {hasPdf ? (
               <PdfPageCanvas
-                key={`${brochure.pdfUrl}-${currentPage}-${zoom}`}
+                key={brochure.pdfUrl}
                 pdfUrl={brochure.pdfUrl!}
                 pageNumber={currentPage}
                 zoom={zoom}
@@ -165,20 +176,18 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
             )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 border-t border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
-            {!hasPdf && (
-              <>
-                <button onClick={() => setZoom(Math.max(0.75, zoom - 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Alejar">
-                  <ZoomOut className="h-5 w-5" />
-                </button>
-                <span className="min-w-16 text-center font-semibold">{Math.round(zoom * 100)}%</span>
-                <button onClick={() => setZoom(Math.min(2.5, zoom + 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Acercar">
-                  <ZoomIn className="h-5 w-5" />
-                </button>
-                <button onClick={() => setZoom(1)} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Restablecer zoom">
-                  <RotateCcw className="h-5 w-5" />
-                </button>
-              </>
-            )}
+            <>
+              <button onClick={() => setZoom(Math.max(0.75, zoom - 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Alejar">
+                <ZoomOut className="h-5 w-5" />
+              </button>
+              <span className="min-w-16 text-center font-semibold">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(Math.min(2.5, zoom + 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Acercar">
+                <ZoomIn className="h-5 w-5" />
+              </button>
+              <button onClick={() => setZoom(1)} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Restablecer zoom">
+                <RotateCcw className="h-5 w-5" />
+              </button>
+            </>
             <span className="font-semibold">Página {currentPage} de {totalPages}</span>
             {hasPdf && (
               <button

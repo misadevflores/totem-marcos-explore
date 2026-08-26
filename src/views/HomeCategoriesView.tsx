@@ -28,7 +28,8 @@ export const HomeCategoriesView: React.FC<HomeCategoriesViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-6 md:p-8 space-y-6 bg-marco-bg text-brand-800 overflow-y-auto">
+    <div className="flex-1 flex flex-col justify-between items-center bg-marco-bg text-brand-800 overflow-y-auto">
+      <div className="w-full h-full flex flex-col p-6 md:p-8 space-y-6 max-w-6xl mx-auto">
       {/* Page Title Header */}
       <div className="space-y-2 text-left">
         <h2 className="text-3xl md:text-4xl font-black text-brand-700 tracking-tight">
@@ -39,9 +40,13 @@ export const HomeCategoriesView: React.FC<HomeCategoriesViewProps> = ({
         </p>
       </div>
 
-      {/* 6 Category Cards Grid (Big touch cards as specified in Wireframe Page 4) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-auto">
-        {categories.map((cat) => (
+      {/* 6 Category Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 my-auto">
+        {[...categories].sort((a, b) => {
+          const na = parseInt(a.code, 10) || 0;
+          const nb = parseInt(b.code, 10) || 0;
+          return na !== nb ? na - nb : a.code.localeCompare(b.code);
+        }).map((cat) => (
           <button
             key={cat.id}
             type="button"
@@ -95,5 +100,7 @@ export const HomeCategoriesView: React.FC<HomeCategoriesViewProps> = ({
         </button>
       </div>
     </div>
+  </div>
   );
 };
+

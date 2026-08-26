@@ -10,15 +10,60 @@ const app = express();
 const PORT = 3001;
 const DB_PATH = path.join(__dirname, 'public', 'totem-marco');
 
+const PDFS_DIR = path.join(__dirname, 'public', 'pdfs');
+if (!fs.existsSync(PDFS_DIR)) {
+  fs.mkdirSync(PDFS_DIR, { recursive: true });
+}
+
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use('/pdfs', express.static(PDFS_DIR));
 
-// Initialize database
+// Servir PDFs del catálogo directamente desde la carpeta catalogo_pdfs
+const CATALOGO_PDFS_DIR = path.join(__dirname, 'catalogo_pdfs');
+app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+  }
+}));
+
+// Initialize database with auto-seeding for clean installations
 let db;
 try {
+  const publicDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
+  }
+
   db = new Database(DB_PATH);
   console.log('[DB] Conectado a totem-marco');
+  console.log('[PDFS] Directorio de PDFs:', PDFS_DIR);
+
+  // Verificar si la base de datos necesita esquema / datos iniciales
+  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'").get();
+  let categoryCount = 0;
+  if (tableCheck) {
+    const row = db.prepare("SELECT count(*) as count FROM categories").get();
+    categoryCount = row ? row.count : 0;
+  }
+
+  if (!tableCheck || categoryCount === 0) {
+    console.info('[DB] Base de datos vacía o recién creada. Inicializando con sqlite.sql...');
+    const sqlFile = path.join(__dirname, 'sqlite.sql');
+    if (fs.existsSync(sqlFile)) {
+      const sqlContent = fs.readFileSync(sqlFile, 'utf8');
+      db.exec(sqlContent);
+      const postCheck = db.prepare("SELECT count(*) as count FROM categories").get();
+      console.info(`[DB] Datos iniciales de catálogo (${postCheck ? postCheck.count : 12} categorías) sembrados exitosamente.`);
+    } else {
+      console.warn('[DB WARNING] No se encontró sqlite.sql para poblar la base de datos.');
+    }
+  } else {
+    console.log(`[DB] Base de datos activa y validada con ${categoryCount} categorías registradas.`);
+  }
 } catch (err) {
   console.error('[DB ERROR]', err.message);
   process.exit(1);
@@ -27,6 +72,52 @@ try {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Backend conectado' });
+});
+
+// Endpoint para restaurar catálogo por defecto
+app.post('/api/reset-defaults', (req, res) => {
+  try {
+    const sqlFile = path.join(__dirname, 'sqlite.sql');
+    if (!fs.existsSync(sqlFile)) {
+      return res.status(404).json({ error: 'sqlite.sql no encontrado' });
+    }
+    const sqlContent = fs.readFileSync(sqlFile, 'utf8');
+    db.exec(sqlContent);
+    console.log('[DB] Catálogo por defecto re-sembrado via API.');
+    res.json({ success: true, message: 'Catálogo por defecto restaurado con éxito' });
+  } catch (err) {
+    console.error('[DB ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint para subir PDFs directamente al directorio de disco
+app.post('/api/upload-pdf', (req, res) => {
+  try {
+    const { filename, base64Data } = req.body;
+    if (!filename || !base64Data) {
+      return res.status(400).json({ error: 'Nombre de archivo y contenido requeridos' });
+    }
+    if (!fs.existsSync(PDFS_DIR)) {
+      fs.mkdirSync(PDFS_DIR, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const cleanOriginalName = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const safeName = `${timestamp}_${cleanOriginalName}`;
+    const filePath = path.join(PDFS_DIR, safeName);
+
+    const base64Clean = base64Data.replace(/^data:application\/pdf;base64,/, '');
+    const buffer = Buffer.from(base64Clean, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    console.log('[PDF UPLOAD] Guardado en carpeta:', safeName, `(${(buffer.length / (1024 * 1024)).toFixed(2)} MB)`);
+    const fileUrl = `./pdfs/${safeName}`;
+    res.json({ success: true, url: fileUrl, filename: safeName, size: buffer.length });
+  } catch (err) {
+    console.error('[PDF UPLOAD ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Execute SELECT query

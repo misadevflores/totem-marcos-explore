@@ -76,6 +76,26 @@ body {
 /* Touch-friendly default button sizes for totem */
 .touch-cta { min-height: 88px; padding-left: 20px; padding-right: 20px; font-size: 1.4rem; }
 
-/* Disable text selection globally for kiosk/touch */
-* { -webkit-user-select: none; -ms-user-select: none; user-select: none; }
+/* Touch screen kiosk performance, no 300ms delay, no tap highlight */
+* {
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input, textarea {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Hardware acceleration for smooth kiosk animations */
+.totem-frame {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
 

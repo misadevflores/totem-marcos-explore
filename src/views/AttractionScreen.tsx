@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Sparkles, ChevronRight, Cpu, Layers, ShieldCheck } from 'lucide-react';
-import marcoLogo from '../../assets/imgi_1_logo-marco-blanco.svg';
+import { Play, Sparkles, ChevronRight, ChevronLeft, Cpu, Layers, ShieldCheck } from 'lucide-react';
+import marcoLogo from '../../assets/img/Logo Marco fondo oscuro.png';
 import fondo1 from '../../assets/fondo/imgi_33_Apache-fondo.min.jpg';
 import fondo2 from '../../assets/fondo/imgi_35_Fondo-Marco-Lab.min.png';
 import fondo3 from '../../assets/fondo/imgi_36_Fondo-Marco-Peruana.min.png';
@@ -41,7 +41,7 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
       setActiveSlide((prev) => (prev + 1) % backgroundSlides.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [backgroundSlides.length]);
+  }, [backgroundSlides.length, activeSlide]); // Reset timer if manually changed
 
   return (
     <div
@@ -70,30 +70,33 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
 
       {/* Top Header Badge */}
       <div className="relative z-20 flex items-center justify-between border-b border-brand-600/80 pb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <img
             src={marcoLogo}
             alt="MARCO"
-            className="w-[170px] h-auto max-h-12 object-contain"
+            className="w-auto h-8 md:h-10 object-contain"
           />
-          <div>
-            <span className="font-extrabold text-2xl tracking-tight text-white block leading-none">
-              MARCO <span className="text-accent-400">Explorer</span>
-            </span>
-            <span className="text-xs uppercase font-bold tracking-widest text-brand-200">
-              {eventTitle} · Plataforma Táctil
-            </span>
-          </div>
+          <div className="h-8 border-l-2 border-brand-500/50"></div>
+          <span className="font-extrabold text-2xl tracking-tight text-accent-400 block leading-none mt-1">
+            Explorer
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 px-3.5 py-1.5 bg-brand-800/80 border border-accent-500/60 rounded-full text-xs font-bold text-accent-300">
-          <Sparkles className="w-3.5 h-3.5 text-accent-400 animate-spin" />
+        <div className="flex items-center gap-2 px-4 py-2 bg-brand-800/80 border border-accent-500/60 rounded-full text-sm font-bold text-accent-300">
+          <Sparkles className="w-4 h-4 text-accent-400 animate-pulse" />
           <span>Tótem Interactivo</span>
         </div>
       </div>
-
+      
       {/* Center Hero Block as Wireframe Page 3 */}
-      <div className="relative z-20 my-auto text-center max-w-xl mx-auto space-y-6 py-6">
+      <div className="relative z-20 my-auto text-center max-w-2xl mx-auto space-y-6 py-6">
+        {/* Big Logo */}
+        <img
+          src={marcoLogo}
+          alt="MARCO"
+          className="w-full max-w-md md:max-w-xl h-auto object-contain mx-auto mb-10"
+        />
+
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand-800/90 border border-brand-600 rounded-full text-xs font-mono text-brand-100">
           <Cpu className="w-4 h-4 text-accent-400" />
           <span>SOLUCIONES INTEGRALES PARA LA INDUSTRIA</span>
@@ -133,6 +136,46 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Slider Navigation Dots */}
+      <div className="relative z-20 pb-4 flex justify-center gap-3">
+        {backgroundSlides.map((_, idx) => (
+          <button
+            key={idx}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveSlide(idx);
+            }}
+            className={`w-12 h-2 rounded-full transition-all duration-300 ${
+              idx === activeSlide ? 'bg-accent-400' : 'bg-white/30 hover:bg-white/50'
+            }`}
+            aria-label={`Ir a la diapositiva ${idx + 1}`}
+          />
+        ))}
+      </div>
+
+      {/* Slider Arrows */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setActiveSlide((prev) => (prev === 0 ? backgroundSlides.length - 1 : prev - 1));
+        }}
+        className="absolute left-6 md:left-12 top-1/2 -translate-y-1/2 z-30 w-16 h-16 bg-[#0b1121] hover:bg-black text-white rounded-full flex items-center justify-center transition-colors shadow-xl"
+      >
+        <ChevronLeft className="w-8 h-8 pr-1" strokeWidth={3} />
+      </button>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setActiveSlide((prev) => (prev + 1) % backgroundSlides.length);
+        }}
+        className="absolute right-6 md:right-12 top-1/2 -translate-y-1/2 z-30 w-16 h-16 bg-[#0b1121] hover:bg-black text-white rounded-full flex items-center justify-center transition-colors shadow-xl"
+      >
+        <ChevronRight className="w-8 h-8 pl-1" strokeWidth={3} />
+      </button>
 
       {/* Bottom Footer Information */}
       <div className="relative z-20 border-t border-brand-600/80 pt-4 flex flex-col sm:flex-row items-center justify-between text-xs text-brand-200 gap-2">

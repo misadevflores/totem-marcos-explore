@@ -1,6 +1,6 @@
 import React from 'react';
-import { ChevronLeft, Home, Lock, Database } from 'lucide-react';
-import marcoLogo from '../../assets/imgi_1_logo-marco-blanco.svg';
+import { ChevronLeft, Home, Lock, Sparkles } from 'lucide-react';
+import marcoLogo from '../../assets/img/Logo Marco fondo oscuro.png';
 
 interface TotemHeaderProps {
   title: string;
@@ -25,12 +25,18 @@ export const TotemHeader: React.FC<TotemHeaderProps> = ({
     <header className="sticky top-0 z-30 bg-brand-900 text-white shadow-lg border-b border-brand-700">
       <div className="px-6 py-4 flex items-center justify-between">
         {/* Brand remains visible on every route without a button-like wrapper. */}
-        <div className="flex items-center gap-3">
-          <img
-            src={marcoLogo}
-            alt="MARCO"
-            className="w-[150px] h-auto max-h-10 object-contain shrink-0"
-          />
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <img
+              src={marcoLogo}
+              alt="MARCO"
+              className="w-auto h-7 md:h-9 object-contain"
+            />
+            <div className="h-7 border-l-2 border-brand-500/50 hidden md:block"></div>
+            <span className="font-extrabold text-xl tracking-tight text-accent-400 leading-none mt-1 hidden md:block">
+              Explorer
+            </span>
+          </div>
 
           {showBack && onBack ? (
             <button
@@ -55,10 +61,10 @@ export const TotemHeader: React.FC<TotemHeaderProps> = ({
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-3">
-          {/* totem-marco database indicator */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-marco-bg rounded-full border border-marco-border text-xs font-semibold text-brand-600">
-            <Database className="w-3.5 h-3.5 text-accent-600" />
-            <span>totem-marco</span>
+          {/* Tótem Interactivo Badge instead of DB */}
+          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 bg-brand-800/80 border border-accent-500/60 rounded-full text-xs font-bold text-accent-300">
+            <Sparkles className="w-3.5 h-3.5 text-accent-400 animate-pulse" />
+            <span>Tótem Interactivo</span>
           </div>
 
           {/* Idle Timeout warning if active */}
