@@ -9,7 +9,12 @@ const docCache = new Map<string, any>();
 
 async function getCachedPdfDocument(url: string) {
   if (docCache.has(url)) return docCache.get(url);
-  const loadingTask = getDocument(url);
+  const loadingTask = getDocument({
+    url: url,
+    cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
+  });
   const doc = await loadingTask.promise;
   docCache.set(url, doc);
   return doc;
@@ -26,6 +31,7 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [renderedPage, setRenderedPage] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,25 +41,41 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
     getCachedPdfDocument(pdfUrl)
       .then(async (pdf) => {
         if (cancelled) return;
+        
+        // Pre-fetch next page in background to speed up subsequent navigation
+        if (pageNumber < pdf.numPages) {
+          pdf.getPage(pageNumber + 1).catch(() => {});
+        }
+
         const page = await pdf.getPage(pageNumber);
         if (cancelled || !canvasRef.current || !containerRef.current) return;
 
         const baseViewport = page.getViewport({ scale: 1 });
         const availableWidth = Math.max(280, containerRef.current.clientWidth - 32);
         const scale = Math.max(0.5, (availableWidth / baseViewport.width) * zoom);
+        
+        // Optimizar calidad vs rendimiento con devicePixelRatio
+        const pixelRatio = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d', { alpha: false });
         if (!context) throw new Error('No se pudo preparar el canvas del PDF.');
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        canvas.width = viewport.width * pixelRatio;
+        canvas.height = viewport.height * pixelRatio;
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
+        
+        // Normalizar la escala del contexto para soporte de pantallas Retina
+        context.scale(pixelRatio, pixelRatio);
 
         renderTask = page.render({ canvas, canvasContext: context, viewport });
         await renderTask.promise;
-        if (!cancelled) setStatus('ready');
+        
+        if (!cancelled) {
+          setStatus('ready');
+          setRenderedPage(pageNumber);
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled && (error as { name?: string }).name !== 'RenderingCancelledException') {
@@ -68,17 +90,25 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
     };
   }, [pageNumber, pdfUrl, zoom]);
 
+  // Si estamos cargando pero ya tenemos una página renderizada, mantenemos su visibilidad (opacidad reducida)
+  // para evitar el "parpadeo blanco" al cambiar de página.
+  const isTransitioning = status === 'loading' && renderedPage !== null;
+
   return (
     <div ref={containerRef} className="relative flex min-h-full min-w-full items-start justify-center p-4">
       {status !== 'ready' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-sm font-semibold text-slate-600">
-          {status === 'loading' ? 'Cargando página...' : 'No se pudo cargar esta página del PDF.'}
+        <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <div className="bg-slate-900/80 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-xl backdrop-blur-sm animate-pulse">
+            {status === 'loading' ? 'Renderizando página...' : 'Error al cargar página.'}
+          </div>
         </div>
       )}
       <canvas
         ref={canvasRef}
         aria-label={`Página ${pageNumber} de ${title}`}
-        className={`bg-white shadow-xl ${status === 'ready' ? 'opacity-100' : 'opacity-0'}`}
+        className={`bg-white shadow-2xl transition-opacity duration-150 ${
+          status === 'ready' ? 'opacity-100' : isTransitioning ? 'opacity-40 blur-[2px]' : 'opacity-0'
+        }`}
       />
     </div>
   );

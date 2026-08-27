@@ -344,7 +344,8 @@ export function initStorage(): Promise<void> {
       await openDb();       // conecta al adaptador según plataforma
       await loadAll();      // sincroniza SQLite con memoria y local cache
       isOfflineMode = false;
-      console.info('[DB] totem-marco sincronizado exitosamente con el backend / SQLite.');
+      try { if (typeof window !== 'undefined') window.localStorage.clear(); } catch(e) {}
+      console.info('[DB] totem-marco sincronizado exitosamente con el backend / SQLite. Cache local limpiado.');
     } catch (err: any) {
       console.warn('[DB WARNING] No se pudo conectar con la BD SQLite directa:', err?.message || err);
       console.info('[DB] Activando modo resiliente: usando caché local por defecto (12 categorías, 20 brochures).');

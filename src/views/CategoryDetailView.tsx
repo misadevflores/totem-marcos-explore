@@ -68,7 +68,7 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
         </div>
 
         <div className="space-y-2.5">
-          {categoryBrochures.slice(0, 2).map((brochure) => (
+          {categoryBrochures.map((brochure) => (
             <div
               key={brochure.id}
               onClick={() => onOpenSingleBrochure(brochure)}

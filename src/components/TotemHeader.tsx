@@ -61,12 +61,6 @@ export const TotemHeader: React.FC<TotemHeaderProps> = ({
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-3">
-          {/* Tótem Interactivo Badge instead of DB */}
-          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 bg-brand-800/80 border border-accent-500/60 rounded-full text-xs font-bold text-accent-300">
-            <Sparkles className="w-3.5 h-3.5 text-accent-400 animate-pulse" />
-            <span>Tótem Interactivo</span>
-          </div>
-
           {/* Idle Timeout warning if active */}
           {idleTimeRemaining !== undefined && idleTimeRemaining < 20 && (
             <div className="px-3 py-1.5 bg-accent-500/20 text-brand-700 border border-accent-600/30 rounded-full text-xs font-bold animate-pulse">

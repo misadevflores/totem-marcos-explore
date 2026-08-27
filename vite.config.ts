@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
             src: 'node_modules/sql.js/dist/sql-wasm.wasm',
             dest: '.',
           },
+          ...(isCapacitor ? [{
+            src: 'catalogo_pdfs',
+            dest: '.'
+          }] : [])
         ],
       }),
     ],

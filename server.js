@@ -198,6 +198,45 @@ app.get('/api/export', (req, res) => {
   }
 });
 
+// Import database
+app.post('/api/import-db', (req, res) => {
+  try {
+    const { base64Data } = req.body;
+    if (!base64Data) {
+      return res.status(400).json({ error: 'No data provided' });
+    }
+
+    console.log('[DB] Importando base de datos...');
+    
+    // Close current connection
+    if (db) {
+      db.close();
+      console.log('[DB] Conexión actual cerrada.');
+    }
+
+    // Write new file
+    const base64Clean = base64Data.replace(/^data:application\/(x-sqlite3|octet-stream);base64,/, '').replace(/^data:.*;base64,/, '');
+    const buffer = Buffer.from(base64Clean, 'base64');
+    fs.writeFileSync(DB_PATH, buffer);
+    console.log(`[DB] Nuevo archivo guardado en disco (${buffer.length} bytes).`);
+
+    // Re-instantiate connection
+    db = new Database(DB_PATH);
+    console.log('[DB] Conexión re-establecida exitosamente.');
+
+    res.json({ success: true, message: 'Base de datos importada correctamente' });
+  } catch (err) {
+    console.error('[DB IMPORT ERROR]', err.message);
+    // Intentar reconectar si falló a mitad de camino
+    try {
+      if (!db || !db.open) db = new Database(DB_PATH);
+    } catch (e) {
+      console.error('[DB FATAL]', 'No se pudo recuperar la conexión tras fallo de importación');
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[DB] Cerrando conexión...');

@@ -81,11 +81,6 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
             Explorer
           </span>
         </div>
-
-        <div className="flex items-center gap-2 px-4 py-2 bg-brand-800/80 border border-accent-500/60 rounded-full text-sm font-bold text-accent-300">
-          <Sparkles className="w-4 h-4 text-accent-400 animate-pulse" />
-          <span>Tótem Interactivo</span>
-        </div>
       </div>
       
       {/* Center Hero Block as Wireframe Page 3 */}

@@ -28,7 +28,8 @@ import {
   Keyboard,
   Smartphone,
   Upload,
-  Save
+  Save,
+  Download
 } from 'lucide-react';
 
 interface AdminPanelModalProps {
@@ -58,6 +59,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [editingBrochure, setEditingBrochure] = useState<Brochure | null>(null);
   const [contentError, setContentError] = useState('');
   const [panelMessage, setPanelMessage] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [pdfUploadStatus, setPdfUploadStatus] = useState<string | null>(null);
 
@@ -89,6 +91,46 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       console.error('Error exportando sqlite:', err);
       showPanelMessage('No se pudo exportar la base de datos');
     }
+  };
+
+  const handleImportSqlite = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      showPanelMessage('Importando base de datos...');
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64Data = event.target?.result;
+        if (typeof base64Data !== 'string') return;
+
+        try {
+          const res = await fetch('http://localhost:3001/api/import-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64Data })
+          });
+
+          if (res.ok) {
+            showPanelMessage('Base de datos importada exitosamente. Recargando...');
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            showPanelMessage('Error importando BD: ' + (errData.error || 'Desconocido'));
+          }
+        } catch (fetchErr) {
+          console.error(fetchErr);
+          showPanelMessage('Error de red al importar base de datos.');
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Error importando sqlite:', err);
+      showPanelMessage('No se pudo procesar el archivo');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleClearCache = async () => {
@@ -195,7 +237,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       reader.onload = async () => {
         try {
           const base64Data = String(reader.result);
-          const response = await fetch('http://localhost:3001/api/upload-pdf', {
+          const apiUrl = (typeof window !== 'undefined' && window.location.hostname !== 'localhost') 
+            ? '/api/upload-pdf' 
+            : 'http://localhost:3001/api/upload-pdf';
+
+          const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -332,15 +378,32 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               <span>EXPORTAR XLSX</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleExportSqlite}
-              title="Descargar base de datos SQLite"
-              className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl border border-slate-600 transition shadow"
-            >
-              <Database className="w-4 h-4 text-amber-300" />
-              <span>EXPORTAR .SQLITE</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportSqlite}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-indigo-600/50 bg-indigo-900/30 hover:bg-indigo-800/40 text-indigo-300 text-xs font-bold transition shadow-lg"
+                title="Descargar base de datos completa"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>EXPORTAR .SQLITE</span>
+              </button>
+
+              <input 
+                type="file" 
+                accept=".sqlite,.db" 
+                ref={fileInputRef} 
+                className="hidden" 
+                onChange={handleImportSqlite} 
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-600/50 bg-amber-900/30 hover:bg-amber-800/40 text-amber-300 text-xs font-bold transition shadow-lg"
+                title="Importar base de datos para reemplazar la actual"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>IMPORTAR .SQLITE</span>
+              </button>
+            </div>
 
             <button
               type="button"
