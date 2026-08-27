@@ -82,6 +82,10 @@ export const ConfirmationView: React.FC<ConfirmationViewProps> = ({
           <p className="text-xs font-bold text-brand-700 tracking-tight leading-tight">
             Escanea para ver información del brochure en tu dispositivo (modo local)
           </p>
+          <div className="pt-2 border-t border-slate-200 mt-2">
+            <p className="text-xs text-brand-500 font-medium">Código de Atención</p>
+            <p className="text-lg font-black text-brand-800 tracking-widest">{lead?.id ? lead.id.substring(0, 8).toUpperCase() : 'MRCO-001'}</p>
+          </div>
         </div>
       </div>
 

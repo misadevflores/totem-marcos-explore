@@ -4,10 +4,14 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import mysql from 'mysql2/promise';
+
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const DB_PATH = path.join(__dirname, 'public', 'totem-marco');
 
 const PDFS_DIR = path.join(__dirname, 'public', 'pdfs');
@@ -21,7 +25,6 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use('/pdfs', express.static(PDFS_DIR));
 
-// Servir PDFs del catálogo directamente desde la carpeta catalogo_pdfs
 const CATALOGO_PDFS_DIR = path.join(__dirname, 'catalogo_pdfs');
 app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
   setHeaders: (res) => {
@@ -30,44 +33,82 @@ app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
   }
 }));
 
-// Initialize database with auto-seeding for clean installations
-let db;
-try {
-  const publicDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
-  }
+let dbType = 'sqlite';
+let sqliteDb;
+let mysqlPool;
 
-  db = new Database(DB_PATH);
-  console.log('[DB] Conectado a totem-marco');
-  console.log('[PDFS] Directorio de PDFs:', PDFS_DIR);
-
-  // Verificar si la base de datos necesita esquema / datos iniciales
-  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'").get();
-  let categoryCount = 0;
-  if (tableCheck) {
-    const row = db.prepare("SELECT count(*) as count FROM categories").get();
-    categoryCount = row ? row.count : 0;
-  }
-
-  if (!tableCheck || categoryCount === 0) {
-    console.info('[DB] Base de datos vacía o recién creada. Inicializando con sqlite.sql...');
-    const sqlFile = path.join(__dirname, 'sqlite.sql');
-    if (fs.existsSync(sqlFile)) {
-      const sqlContent = fs.readFileSync(sqlFile, 'utf8');
-      db.exec(sqlContent);
-      const postCheck = db.prepare("SELECT count(*) as count FROM categories").get();
-      console.info(`[DB] Datos iniciales de catálogo (${postCheck ? postCheck.count : 12} categorías) sembrados exitosamente.`);
-    } else {
-      console.warn('[DB WARNING] No se encontró sqlite.sql para poblar la base de datos.');
+async function initDatabase() {
+  if (process.env.MYSQL_URL) {
+    dbType = 'mysql';
+    console.log('[DB] Inicializando conexión a MySQL...');
+    mysqlPool = mysql.createPool(process.env.MYSQL_URL);
+    
+    try {
+      const [tableCheck] = await mysqlPool.query("SHOW TABLES LIKE 'categories'");
+      if (tableCheck.length === 0) {
+        console.info('[DB] Base de datos MySQL vacía. Ejecutando esquema inicial...');
+        const sqlFile = path.join(__dirname, 'sqlite.sql');
+        if (fs.existsSync(sqlFile)) {
+          let sqlContent = fs.readFileSync(sqlFile, 'utf8');
+          // Adaptar esquema SQLite básico a MySQL
+          sqlContent = sqlContent.replace(/AUTOINCREMENT/g, 'AUTO_INCREMENT');
+          // Quitar instrucciones de SQLite
+          sqlContent = sqlContent.replace(/BEGIN TRANSACTION;/gi, '');
+          sqlContent = sqlContent.replace(/COMMIT;/gi, '');
+          
+          const statements = sqlContent.split(';').filter(s => s.trim().length > 0);
+          for (let s of statements) {
+             if (!s.trim().startsWith('--')) {
+               await mysqlPool.query(s);
+             }
+          }
+          console.info('[DB] Mapeo y ejecución de esquema inicial en MySQL completado.');
+        }
+      } else {
+        const [rows] = await mysqlPool.query("SELECT count(*) as count FROM categories");
+        console.log(`[DB] MySQL activo con ${rows[0].count} categorías.`);
+      }
+    } catch (err) {
+      console.error('[DB ERROR MYSQL]', err.message);
+      process.exit(1);
     }
   } else {
-    console.log(`[DB] Base de datos activa y validada con ${categoryCount} categorías registradas.`);
+    try {
+      const publicDir = path.dirname(DB_PATH);
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+      }
+
+      sqliteDb = new Database(DB_PATH);
+      console.log('[DB] Conectado a totem-marco (SQLite local)');
+      
+      const tableCheck = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'").get();
+      let categoryCount = 0;
+      if (tableCheck) {
+        const row = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
+        categoryCount = row ? row.count : 0;
+      }
+
+      if (!tableCheck || categoryCount === 0) {
+        console.info('[DB] Base de datos vacía. Inicializando con sqlite.sql...');
+        const sqlFile = path.join(__dirname, 'sqlite.sql');
+        if (fs.existsSync(sqlFile)) {
+          const sqlContent = fs.readFileSync(sqlFile, 'utf8');
+          sqliteDb.exec(sqlContent);
+          const postCheck = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
+          console.info(`[DB] Datos iniciales de catálogo (${postCheck ? postCheck.count : 12} categorías) sembrados exitosamente.`);
+        }
+      } else {
+        console.log(`[DB] Base de datos SQLite activa con ${categoryCount} categorías.`);
+      }
+    } catch (err) {
+      console.error('[DB ERROR SQLITE]', err.message);
+      process.exit(1);
+    }
   }
-} catch (err) {
-  console.error('[DB ERROR]', err.message);
-  process.exit(1);
 }
+
+initDatabase();
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -75,15 +116,29 @@ app.get('/api/health', (req, res) => {
 });
 
 // Endpoint para restaurar catálogo por defecto
-app.post('/api/reset-defaults', (req, res) => {
+app.post('/api/reset-defaults', async (req, res) => {
   try {
     const sqlFile = path.join(__dirname, 'sqlite.sql');
     if (!fs.existsSync(sqlFile)) {
       return res.status(404).json({ error: 'sqlite.sql no encontrado' });
     }
     const sqlContent = fs.readFileSync(sqlFile, 'utf8');
-    db.exec(sqlContent);
-    console.log('[DB] Catálogo por defecto re-sembrado via API.');
+    
+    if (dbType === 'mysql') {
+      let content = sqlContent.replace(/AUTOINCREMENT/g, 'AUTO_INCREMENT');
+      content = content.replace(/BEGIN TRANSACTION;/gi, '');
+      content = content.replace(/COMMIT;/gi, '');
+      const statements = content.split(';').filter(s => s.trim().length > 0);
+      for (let s of statements) {
+         if (!s.trim().startsWith('--')) {
+           await mysqlPool.query(s);
+         }
+      }
+    } else {
+      sqliteDb.exec(sqlContent);
+    }
+    
+    console.log(`[DB ${dbType}] Catálogo por defecto re-sembrado via API.`);
     res.json({ success: true, message: 'Catálogo por defecto restaurado con éxito' });
   } catch (err) {
     console.error('[DB ERROR]', err.message);
@@ -120,17 +175,110 @@ app.post('/api/upload-pdf', (req, res) => {
   }
 });
 
+// Helper para adaptar consultas SQLite a MySQL
+function adaptSqlForMysql(sql) {
+  if (dbType === 'mysql') {
+    // Reemplazar INSERT OR REPLACE INTO por REPLACE INTO
+    return sql.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'REPLACE INTO');
+  }
+  return sql;
+}
+
+// Sincronizar datos locales hacia la nube
+app.post('/api/sync-upload', async (req, res) => {
+  try {
+    const { leads = [], stats = [] } = req.body;
+    
+    if (dbType === 'mysql') {
+      const connection = await mysqlPool.getConnection();
+      try {
+        await connection.beginTransaction();
+        
+        // Sincronizar leads
+        for (const lead of leads) {
+          const l = lead;
+          const sql = `REPLACE INTO leads (
+            id, firstName, lastName, fullName, email, phone, company, position, 
+            categoryId, categoryName, brochureId, brochureTitle, 
+            requirementType, requirementDetail, source, createdAt, 
+            status, authorizedTerms
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          
+          await connection.execute(sql, [
+            l.id, l.firstName, l.lastName, l.fullName, l.email, l.phone, l.company, l.position,
+            l.categoryId, l.categoryName, l.brochureId, l.brochureTitle,
+            l.requirementType, l.requirementDetail, l.source, l.createdAt,
+            l.status, l.authorizedTerms ? 1 : 0
+          ]);
+        }
+
+        // Sincronizar stats
+        for (const stat of stats) {
+          const sql = `INSERT INTO stats (key, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = GREATEST(value, ?)`;
+          await connection.execute(sql, [stat.key, stat.value, stat.value]);
+        }
+
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
+    } else {
+      const transaction = sqliteDb.transaction(() => {
+        for (const lead of leads) {
+          const l = lead;
+          const sql = `INSERT OR REPLACE INTO leads (
+            id, firstName, lastName, fullName, email, phone, company, position, 
+            categoryId, categoryName, brochureId, brochureTitle, 
+            requirementType, requirementDetail, source, createdAt, 
+            status, authorizedTerms
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          
+          const stmt = sqliteDb.prepare(sql);
+          stmt.run(
+            l.id, l.firstName, l.lastName, l.fullName, l.email, l.phone, l.company, l.position,
+            l.categoryId, l.categoryName, l.brochureId, l.brochureTitle,
+            l.requirementType, l.requirementDetail, l.source, l.createdAt,
+            l.status, l.authorizedTerms ? 1 : 0
+          );
+        }
+        
+        for (const stat of stats) {
+          const sql = `INSERT OR REPLACE INTO stats (key, value) VALUES (?, ?)`;
+          const stmt = sqliteDb.prepare(sql);
+          stmt.run(stat.key, stat.value);
+        }
+      });
+      transaction();
+    }
+    
+    console.log(`[SYNC] Sincronizados ${leads.length} leads y ${stats.length} stats en ${dbType}`);
+    res.json({ success: true, message: 'Sincronización completada' });
+  } catch (err) {
+    console.error('[SYNC ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Execute SELECT query
-app.post('/api/query', (req, res) => {
+app.post('/api/query', async (req, res) => {
   try {
     const { sql } = req.body;
     if (!sql) return res.status(400).json({ error: 'SQL requerido' });
 
-    console.log('[SQL LOG] QUERY:', sql);
-    const stmt = db.prepare(sql);
-    const result = stmt.all();
-    
-    res.json({ success: true, data: result });
+    const adaptedSql = adaptSqlForMysql(sql);
+    console.log(`[SQL LOG ${dbType}] QUERY:`, adaptedSql);
+
+    if (dbType === 'mysql') {
+      const [rows] = await mysqlPool.query(adaptedSql);
+      return res.json({ success: true, data: rows });
+    } else {
+      const stmt = sqliteDb.prepare(adaptedSql);
+      const result = stmt.all();
+      return res.json({ success: true, data: result });
+    }
   } catch (err) {
     console.error('[SQL ERROR]', err.message);
     res.status(400).json({ error: err.message });
@@ -138,21 +286,32 @@ app.post('/api/query', (req, res) => {
 });
 
 // Execute INSERT/UPDATE/DELETE
-app.post('/api/execute', (req, res) => {
+app.post('/api/execute', async (req, res) => {
   try {
     const { sql } = req.body;
     if (!sql) return res.status(400).json({ error: 'SQL requerido' });
 
-    console.log('[SQL LOG] EXECUTE:', sql);
-    const stmt = db.prepare(sql);
-    const info = stmt.run();
-    
-    console.log('[SQL LOG] Cambios aplicados:', { changes: info.changes, lastInsertRowid: info.lastInsertRowid });
-    res.json({ 
-      success: true, 
-      changes: info.changes,
-      lastId: info.lastInsertRowid 
-    });
+    const adaptedSql = adaptSqlForMysql(sql);
+    console.log(`[SQL LOG ${dbType}] EXECUTE:`, adaptedSql);
+
+    if (dbType === 'mysql') {
+      const [result] = await mysqlPool.query(adaptedSql);
+      console.log('[SQL LOG] Cambios aplicados:', { changes: result.affectedRows, lastInsertRowid: result.insertId });
+      return res.json({ 
+        success: true, 
+        changes: result.affectedRows,
+        lastId: result.insertId 
+      });
+    } else {
+      const stmt = sqliteDb.prepare(adaptedSql);
+      const info = stmt.run();
+      console.log('[SQL LOG] Cambios aplicados:', { changes: info.changes, lastInsertRowid: info.lastInsertRowid });
+      return res.json({ 
+        success: true, 
+        changes: info.changes,
+        lastId: info.lastInsertRowid 
+      });
+    }
   } catch (err) {
     console.error('[SQL ERROR]', err.message);
     res.status(400).json({ error: err.message });
@@ -160,24 +319,44 @@ app.post('/api/execute', (req, res) => {
 });
 
 // Batch execute multiple statements
-app.post('/api/batch', (req, res) => {
+app.post('/api/batch', async (req, res) => {
   try {
     const { statements } = req.body;
     if (!Array.isArray(statements)) {
       return res.status(400).json({ error: 'Statements debe ser un array' });
     }
 
-    console.log('[SQL LOG] BATCH:', statements.length, 'statements');
+    console.log(`[SQL LOG ${dbType}] BATCH:`, statements.length, 'statements');
     const results = [];
-    const transaction = db.transaction(() => {
-      for (const sql of statements) {
-        const stmt = db.prepare(sql);
-        const info = stmt.run();
-        results.push({ sql, changes: info.changes });
-      }
-    });
 
-    transaction();
+    if (dbType === 'mysql') {
+      const connection = await mysqlPool.getConnection();
+      try {
+        await connection.beginTransaction();
+        for (let sql of statements) {
+          const adaptedSql = adaptSqlForMysql(sql);
+          const [result] = await connection.query(adaptedSql);
+          results.push({ sql: adaptedSql, changes: result.affectedRows });
+        }
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
+    } else {
+      const transaction = sqliteDb.transaction(() => {
+        for (let sql of statements) {
+          const adaptedSql = adaptSqlForMysql(sql);
+          const stmt = sqliteDb.prepare(adaptedSql);
+          const info = stmt.run();
+          results.push({ sql: adaptedSql, changes: info.changes });
+        }
+      });
+      transaction();
+    }
+    
     console.log('[SQL LOG] Batch completado:', results.length, 'operaciones');
     res.json({ success: true, results });
   } catch (err) {
@@ -201,6 +380,10 @@ app.get('/api/export', (req, res) => {
 // Import database
 app.post('/api/import-db', (req, res) => {
   try {
+    if (dbType === 'mysql') {
+      return res.status(400).json({ error: 'Importación de SQLite directo no soportada en modo MySQL' });
+    }
+
     const { base64Data } = req.body;
     if (!base64Data) {
       return res.status(400).json({ error: 'No data provided' });
@@ -209,8 +392,8 @@ app.post('/api/import-db', (req, res) => {
     console.log('[DB] Importando base de datos...');
     
     // Close current connection
-    if (db) {
-      db.close();
+    if (sqliteDb) {
+      sqliteDb.close();
       console.log('[DB] Conexión actual cerrada.');
     }
 
@@ -221,7 +404,7 @@ app.post('/api/import-db', (req, res) => {
     console.log(`[DB] Nuevo archivo guardado en disco (${buffer.length} bytes).`);
 
     // Re-instantiate connection
-    db = new Database(DB_PATH);
+    sqliteDb = new Database(DB_PATH);
     console.log('[DB] Conexión re-establecida exitosamente.');
 
     res.json({ success: true, message: 'Base de datos importada correctamente' });
@@ -229,7 +412,7 @@ app.post('/api/import-db', (req, res) => {
     console.error('[DB IMPORT ERROR]', err.message);
     // Intentar reconectar si falló a mitad de camino
     try {
-      if (!db || !db.open) db = new Database(DB_PATH);
+      if (dbType === 'sqlite' && (!sqliteDb || !sqliteDb.open)) sqliteDb = new Database(DB_PATH);
     } catch (e) {
       console.error('[DB FATAL]', 'No se pudo recuperar la conexión tras fallo de importación');
     }
@@ -238,13 +421,17 @@ app.post('/api/import-db', (req, res) => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n[DB] Cerrando conexión...');
-  db.close();
+  if (dbType === 'mysql' && mysqlPool) {
+    await mysqlPool.end();
+  } else if (sqliteDb) {
+    sqliteDb.close();
+  }
   process.exit(0);
 });
 
 app.listen(PORT, () => {
-  console.log(`[SERVER] Escuchando en http://localhost:${PORT}`);
-  console.log(`[DB PATH] ${DB_PATH}`);
+  console.log(`[SERVER] Escuchando en puerto ${PORT}`);
+  console.log(`[DB PATH] ${DB_PATH} (Modo: ${dbType})`);
 });

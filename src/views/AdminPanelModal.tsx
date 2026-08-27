@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Lead, KioskSettings, Category, Brochure } from '../types';
+import marcoLogo from '../../assets/imgi_2_logo-marco-COLOR.svg';
 
-GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 import {
   exportLeadsToXLSX as exportLeadsToExcel,
   updateLeadStatus,
@@ -82,7 +84,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const handleExportSqlite = () => {
     try {
       const a = document.createElement('a');
-      a.href = 'http://localhost:3001/api/export';
+      const apiUrl = (typeof window !== 'undefined' && window.location.hostname !== 'localhost') 
+        ? '/api/export' 
+        : 'http://localhost:3001/api/export';
+      a.href = apiUrl;
       a.download = 'totem-marco.sqlite';
       document.body.appendChild(a);
       a.click();
@@ -105,7 +110,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         if (typeof base64Data !== 'string') return;
 
         try {
-          const res = await fetch('http://localhost:3001/api/import-db', {
+          const apiUrl = (typeof window !== 'undefined' && window.location.hostname !== 'localhost') 
+            ? '/api/import-db' 
+            : 'http://localhost:3001/api/import-db';
+
+          const res = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ base64Data })
@@ -358,8 +367,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         {/* Admin Header */}
         <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-800 text-white flex items-center justify-center font-extrabold text-xl">
-              M
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src={marcoLogo} alt="MARCO Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">Panel MARCO Explorer</h2>

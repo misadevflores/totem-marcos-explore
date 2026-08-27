@@ -1,24 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Mail, UserCheck, X, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Brochure, Category } from '../types';
 
-GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const docCache = new Map<string, any>();
 
 async function getCachedPdfDocument(url: string) {
-  if (docCache.has(url)) return docCache.get(url);
+  const safeUrl = encodeURI(decodeURI(url));
+  if (docCache.has(safeUrl)) return docCache.get(safeUrl);
+  
   const loadingTask = getDocument({
-    url: url,
-    cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
+    url: safeUrl,
+    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/cmaps/',
     cMapPacked: true,
-    standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
+    standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/standard_fonts/',
   });
   const doc = await loadingTask.promise;
   docCache.set(url, doc);
   return doc;
 }
+
+// Caché de imágenes renderizadas para acceso instantáneo
+const renderCache = new Map<string, string>();
 
 interface PdfPageCanvasProps {
   pdfUrl: string;
@@ -32,12 +38,23 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [renderedPage, setRenderedPage] = useState<number | null>(null);
+  const [cachedImage, setCachedImage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let renderTask: { cancel: () => void; promise: Promise<unknown> } | undefined;
 
+    const cacheKey = `${pdfUrl}_${pageNumber}_${zoom}`;
+    if (renderCache.has(cacheKey)) {
+      setCachedImage(renderCache.get(cacheKey)!);
+      setStatus('ready');
+      setRenderedPage(pageNumber);
+      return;
+    }
+
     setStatus('loading');
+    setCachedImage(null);
+
     getCachedPdfDocument(pdfUrl)
       .then(async (pdf) => {
         if (cancelled) return;
@@ -54,11 +71,11 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
         const availableWidth = Math.max(280, containerRef.current.clientWidth - 32);
         const scale = Math.max(0.5, (availableWidth / baseViewport.width) * zoom);
         
-        // Optimizar calidad vs rendimiento con devicePixelRatio
-        const pixelRatio = window.devicePixelRatio || 1;
+        // Optimizar calidad vs rendimiento con devicePixelRatio (capeado a 1.5 para mejor rendimiento)
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
-        const context = canvas.getContext('2d', { alpha: false });
+        const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
         if (!context) throw new Error('No se pudo preparar el canvas del PDF.');
 
         canvas.width = viewport.width * pixelRatio;
@@ -73,6 +90,13 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
         await renderTask.promise;
         
         if (!cancelled) {
+          try {
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            renderCache.set(cacheKey, dataUrl);
+            setCachedImage(dataUrl);
+          } catch (e) {
+            // Ignorar errores de toDataURL (p. ej. por seguridad CORS en algunos entornos)
+          }
           setStatus('ready');
           setRenderedPage(pageNumber);
         }
@@ -99,17 +123,25 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
       {status !== 'ready' && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           <div className="bg-slate-900/80 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-xl backdrop-blur-sm animate-pulse">
-            {status === 'loading' ? 'Renderizando página...' : 'Error al cargar página.'}
+            {status === 'loading' ? 'Cargando página...' : 'Error al cargar página.'}
           </div>
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        aria-label={`Página ${pageNumber} de ${title}`}
-        className={`bg-white shadow-2xl transition-opacity duration-150 ${
-          status === 'ready' ? 'opacity-100' : isTransitioning ? 'opacity-40 blur-[2px]' : 'opacity-0'
-        }`}
-      />
+      {cachedImage && status === 'ready' ? (
+        <img 
+          src={cachedImage} 
+          alt={`Página ${pageNumber} de ${title}`}
+          className="bg-white shadow-2xl animate-in fade-in duration-150"
+        />
+      ) : (
+        <canvas
+          ref={canvasRef}
+          aria-label={`Página ${pageNumber} de ${title}`}
+          className={`bg-white shadow-2xl transition-opacity duration-150 ${
+            status === 'ready' ? 'opacity-100' : isTransitioning ? 'opacity-40 blur-[2px]' : 'opacity-0'
+          }`}
+        />
+      )}
     </div>
   );
 };

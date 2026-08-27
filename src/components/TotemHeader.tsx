@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronLeft, Home, Lock, Sparkles } from 'lucide-react';
-import marcoLogo from '../../assets/img/Logo Marco fondo oscuro.png';
+import marcoLogo from '../../assets/imgi_1_logo-marco-blanco.svg';
 
 interface TotemHeaderProps {
   title: string;
@@ -23,17 +23,17 @@ export const TotemHeader: React.FC<TotemHeaderProps> = ({
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-brand-900 text-white shadow-lg border-b border-brand-700">
-      <div className="px-6 py-4 flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
         {/* Brand remains visible on every route without a button-like wrapper. */}
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <img
               src={marcoLogo}
               alt="MARCO"
-              className="w-auto h-7 md:h-9 object-contain"
+              className="w-auto h-12 md:h-20 object-contain"
             />
-            <div className="h-7 border-l-2 border-brand-500/50 hidden md:block"></div>
-            <span className="font-extrabold text-xl tracking-tight text-accent-400 leading-none mt-1 hidden md:block">
+            <div className="h-6 md:h-10 border-l-2 border-brand-500/50 hidden md:block"></div>
+            <span className="font-extrabold text-[10px] md:text-xs tracking-tight text-accent-400 leading-none hidden md:block mt-1">
               Explorer
             </span>
           </div>

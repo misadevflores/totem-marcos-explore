@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Sparkles, ChevronRight, ChevronLeft, Cpu, Layers, ShieldCheck } from 'lucide-react';
-import marcoLogo from '../../assets/img/Logo Marco fondo oscuro.png';
+import marcoLogo from '../../assets/imgi_1_logo-marco-blanco.svg';
+import marcoLogoDark from '../../assets/img/Logo Marco fondo oscuro.png';
 import fondo1 from '../../assets/fondo/imgi_33_Apache-fondo.min.jpg';
 import fondo2 from '../../assets/fondo/imgi_35_Fondo-Marco-Lab.min.png';
 import fondo3 from '../../assets/fondo/imgi_36_Fondo-Marco-Peruana.min.png';
@@ -70,14 +71,14 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
 
       {/* Top Header Badge */}
       <div className="relative z-20 flex items-center justify-between border-b border-brand-600/80 pb-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-3">
           <img
             src={marcoLogo}
             alt="MARCO"
-            className="w-auto h-8 md:h-10 object-contain"
+            className="w-auto h-12 md:h-20 object-contain"
           />
-          <div className="h-8 border-l-2 border-brand-500/50"></div>
-          <span className="font-extrabold text-2xl tracking-tight text-accent-400 block leading-none mt-1">
+          <div className="h-6 md:h-10 border-l-2 border-brand-500/50 hidden md:block"></div>
+          <span className="font-extrabold text-[10px] md:text-xs tracking-tight text-accent-400 leading-none hidden md:block mt-1">
             Explorer
           </span>
         </div>
@@ -87,7 +88,7 @@ export const AttractionScreen: React.FC<AttractionScreenProps> = ({
       <div className="relative z-20 my-auto text-center max-w-2xl mx-auto space-y-6 py-6">
         {/* Big Logo */}
         <img
-          src={marcoLogo}
+          src={marcoLogoDark}
           alt="MARCO"
           className="w-full max-w-md md:max-w-xl h-auto object-contain mx-auto mb-10"
         />

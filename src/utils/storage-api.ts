@@ -12,7 +12,9 @@ import {
   resetLocalDataCache
 } from '../data/mockCatalog';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = (typeof window !== 'undefined' && window.location.hostname !== 'localhost') 
+  ? '/api' 
+  : 'http://localhost:3001/api';
 
 export const DEFAULT_SETTINGS: KioskSettings = INITIAL_SETTINGS;
 
