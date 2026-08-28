@@ -26,6 +26,9 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use('/pdfs', express.static(PDFS_DIR));
 
 const CATALOGO_PDFS_DIR = path.join(__dirname, 'catalogo_pdfs');
+if (!fs.existsSync(CATALOGO_PDFS_DIR)) {
+  fs.mkdirSync(CATALOGO_PDFS_DIR, { recursive: true });
+}
 app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
   setHeaders: (res) => {
     res.setHeader('Content-Type', 'application/pdf');

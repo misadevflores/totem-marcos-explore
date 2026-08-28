@@ -7,9 +7,6 @@ coverage/
 .env*
 !.env.example
 
-# PDFs del catálogo (482 MB — demasiado grandes para Vercel)
-# Úsalos solo en local. Para producción, ejecuta: npm run upload-pdfs
-catalogo_pdfs/
 
 # SQLite journal / WAL (archivos temporales de la BD)
 *-journal
