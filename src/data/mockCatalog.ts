@@ -9,7 +9,8 @@ export const INITIAL_SETTINGS: KioskSettings = {
   enableVirtualKeyboard: true,
   totemFrameMode: false,
   companyName: 'MARCO Peru',
-  eventTitle: 'Expomina 2026'
+  eventTitle: 'Expomina 2026',
+  cloudSyncUrl: ''
 };
 
 export const INITIAL_STATS = {

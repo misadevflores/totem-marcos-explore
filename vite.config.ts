@@ -66,6 +66,20 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
+        '/pdfs': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
+        '/catalogo_pdfs': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
+      },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
         ignored: [

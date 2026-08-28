@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server.js",
     "dev": "concurrently -n SERVER,VITE -c cyan,green \"node server.js\" \"vite --port=3000 --host=0.0.0.0\"",
     "server": "node server.js",
     "build": "npm run generate-sqlite && vite build",
@@ -13,6 +14,9 @@
     "lint": "tsc --noEmit",
     "generate-sqlite": "node scripts/generate-sqlite.js",
     "upload-pdfs": "node scripts/upload-pdfs-to-blob.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^8.1.1",

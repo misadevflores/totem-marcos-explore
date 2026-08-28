@@ -61,6 +61,7 @@ export interface KioskSettings {
   totemFrameMode: boolean; // True: show 1080x1920 Totem Frame bezel, False: fullscreen fit
   companyName: string;
   eventTitle: string;
+  cloudSyncUrl?: string; // URL for offline-first synchronization
 }
 
 export interface AdminStats {

@@ -33,6 +33,16 @@ app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
   }
 }));
 
+// Servir frontend compilado y assets públicos
+const DIST_DIR = path.join(__dirname, 'dist');
+if (fs.existsSync(DIST_DIR)) {
+  app.use(express.static(DIST_DIR));
+}
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+}
+
 let dbType = 'sqlite';
 let sqliteDb;
 let mysqlPool;
@@ -70,7 +80,6 @@ async function initDatabase() {
       }
     } catch (err) {
       console.error('[DB ERROR MYSQL]', err.message);
-      process.exit(1);
     }
   } else {
     try {
@@ -103,7 +112,6 @@ async function initDatabase() {
       }
     } catch (err) {
       console.error('[DB ERROR SQLITE]', err.message);
-      process.exit(1);
     }
   }
 }
@@ -112,7 +120,8 @@ initDatabase();
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Backend conectado' });
+  const dbStatus = (dbType === 'mysql' ? (mysqlPool ? 'connected' : 'disconnected') : (sqliteDb ? 'connected' : 'disconnected'));
+  res.json({ status: 'ok', dbType, dbStatus, message: 'Backend conectado' });
 });
 
 // Endpoint para restaurar catálogo por defecto
@@ -420,6 +429,18 @@ app.post('/api/import-db', (req, res) => {
   }
 });
 
+// Fallback SPA para todas las demás rutas (permite recargar páginas en React Router / cliente)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/pdfs') || req.path.startsWith('/catalogo_pdfs')) {
+    return next();
+  }
+  const indexPath = path.join(DIST_DIR, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.status(200).send('Totem MARCO Server running. Build frontend with `npm run build` to see the web interface.');
+});
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n[DB] Cerrando conexión...');
@@ -431,7 +452,8 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-app.listen(PORT, () => {
-  console.log(`[SERVER] Escuchando en puerto ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[SERVER] Escuchando en http://0.0.0.0:${PORT}`);
   console.log(`[DB PATH] ${DB_PATH} (Modo: ${dbType})`);
 });
+

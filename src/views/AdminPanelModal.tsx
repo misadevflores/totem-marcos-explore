@@ -31,7 +31,8 @@ import {
   Smartphone,
   Upload,
   Save,
-  Download
+  Download,
+  Cloud
 } from 'lucide-react';
 
 interface AdminPanelModalProps {
@@ -141,6 +142,44 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncToCloud = async () => {
+    if (!settings.cloudSyncUrl) {
+      showPanelMessage('Debes configurar la URL de Sincronización a la Nube primero.');
+      return;
+    }
+
+    setIsSyncing(true);
+    showPanelMessage('Iniciando sincronización a la nube...');
+
+    try {
+      const baseUrl = settings.cloudSyncUrl.trim();
+      const apiUrl = baseUrl.endsWith('/') 
+        ? `${baseUrl}api/sync-upload` 
+        : `${baseUrl}/api/sync-upload`;
+
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leads, stats })
+      });
+
+      if (res.ok) {
+        showPanelMessage(`Sincronización completada exitosamente.`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showPanelMessage('Error en la nube: ' + (errData.error || 'Desconocido'));
+      }
+    } catch (err) {
+      console.error('Error sincronizando:', err);
+      showPanelMessage('Error de red al intentar conectar con la nube.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
 
   const handleClearCache = async () => {
     if (!window.confirm(
@@ -818,6 +857,37 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   >
                     {settings.totemFrameMode ? 'Marco Activo' : 'Pantalla Completa'}
                   </button>
+                </div>
+
+                {/* Cloud Sync */}
+                <div className="flex flex-col gap-4 border-t border-slate-700/80 pt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Cloud className="w-4 h-4 text-blue-400" />
+                        Sincronización a la Nube (MySQL)
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Configura la URL de tu backend para sincronizar Leads y Estadísticas.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSyncToCloud}
+                      disabled={isSyncing}
+                      className="inline-flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl border border-blue-600/80 bg-blue-950/60 hover:bg-blue-900 text-blue-300 transition shadow-lg shadow-blue-950/20 disabled:opacity-50"
+                    >
+                      {isSyncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
+                      {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="https://tu-backend.railway.app/"
+                    value={settings.cloudSyncUrl || ''}
+                    onChange={(e) => onUpdateSettings({ cloudSyncUrl: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-blue-500 text-sm font-mono"
+                  />
                 </div>
 
                 {/* Restore Default Catalog & Cache */}
