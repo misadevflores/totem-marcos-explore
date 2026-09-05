@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "start": "node server.js",
@@ -9,6 +9,7 @@
     "server": "node server.js",
     "build": "npm run generate-sqlite && vite build",
     "build:capacitor": "npm run generate-sqlite && VITE_BUILD_TARGET=capacitor vite build && npx cap copy android",
+    "build:apk": "npm run build:capacitor && cd android && ./gradlew assembleDebug && cd .. && node scripts/copy-apk.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
@@ -36,6 +37,7 @@
     "motion": "^12.23.24",
     "mysql2": "^3.24.2",
     "pdfjs-dist": "^5.6.205",
+    "qrcode": "^1.5.4",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sql.js": "^1.8.0",
@@ -47,6 +49,7 @@
     "@types/canvas-confetti": "^1.9.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "autoprefixer": "^10.4.21",

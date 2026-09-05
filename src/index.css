@@ -34,33 +34,21 @@
 }
 
 /* ============================================================
-   RESPONSIVE TOTEM FRAME FIX
-   Caps the 9:16 totem frame to the available viewport height
-   so it never overflows on short / landscape screens.
+   RESPONSIVE TOTEM 1080x1920 PORTRAIT LAYOUT
+   Adapts to full height 100dvh without margins or letterboxing
    ============================================================ */
-.totem-frame {
-  /* Allow full 9:16 portrait sizing up to 1080px width for the totem hardware */
-  height: min(100%, calc(100vh - 7rem));
-  width: 100%;
-  max-width: 1080px;
-  aspect-ratio: 9 / 16;
-}
-@media (max-width: 640px) {
-  .totem-frame {
-    height: calc(100vh - 6rem);
-  }
-  .totem-frame.height-auto-sm {
-    height: auto;
-    aspect-ratio: auto;
-  }
-}
-
 html, body, #root {
   height: 100%;
-}
-
-body {
+  height: 100dvh;
+  min-height: 100dvh;
+  width: 100%;
   margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
+  background-color: var(--color-marco-bg);
 }
 
 /* Fallback utility classes mapped to CSS variables so branding works in WebView/offline */
@@ -74,27 +62,51 @@ body {
 .accent-500 { color: var(--color-accent-500) !important; }
 
 /* Touch-friendly default button sizes for totem */
-.touch-cta { min-height: 88px; padding-left: 20px; padding-right: 20px; font-size: 1.4rem; }
+.touch-cta {
+  min-height: 84px;
+  padding-left: 24px;
+  padding-right: 24px;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
 
-/* Touch screen kiosk performance, no 300ms delay, no tap highlight */
+/* Touch screen kiosk performance, no 300ms delay, no tap highlight, no text selection */
 * {
   -webkit-user-select: none;
   -ms-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
 
 input, textarea {
   -webkit-user-select: auto;
   user-select: auto;
+  -webkit-touch-callout: default;
 }
 
 button, a, input, select, textarea {
   touch-action: manipulation;
 }
 
+/* Custom smooth scrollbar for vertical views */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 /* Hardware acceleration for smooth kiosk animations */
-.totem-frame {
+.kiosk-container {
   transform: translateZ(0);
   backface-visibility: hidden;
 }

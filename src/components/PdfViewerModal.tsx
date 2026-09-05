@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Mail, UserCheck, X, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Mail, UserCheck, X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, QrCode as QrIcon } from 'lucide-react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Brochure, Category } from '../types';
+import { getStoredSettings } from '../utils/storage-api';
+import { QrCodeCard } from './QrCodeCard';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -171,6 +173,29 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
     ? pageImages[(currentPage - 1) % pageImages.length]
     : undefined;
 
+  const [showQrModal, setShowQrModal] = useState(false);
+  const settings = getStoredSettings();
+
+  const qrTargetUrl = useMemo(() => {
+    if (brochure.pdfUrl) {
+      const rawPdf = brochure.pdfUrl;
+      if (rawPdf.startsWith('http://') || rawPdf.startsWith('https://')) {
+        return rawPdf;
+      }
+      if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.startsWith('file:') && !window.location.origin.includes('localhost')) {
+        return `${window.location.origin}${rawPdf.startsWith('/') ? '' : '/'}${rawPdf}`;
+      }
+      if (settings.cloudSyncUrl && settings.cloudSyncUrl.startsWith('http')) {
+        const baseUrl = settings.cloudSyncUrl.replace(/\/+$/, '');
+        return `${baseUrl}${rawPdf.startsWith('/') ? '' : '/'}${rawPdf}`;
+      }
+      if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.startsWith('file:')) {
+        return `${window.location.origin}${rawPdf.startsWith('/') ? '' : '/'}${rawPdf}`;
+      }
+    }
+    return typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://marco.com.pe';
+  }, [brochure.pdfUrl, settings.cloudSyncUrl]);
+
   const handlePrev = () => {
     if (currentPage > 1) setCurrentPage(currentPage - 1);
   };
@@ -186,6 +211,38 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col overflow-hidden animate-in fade-in duration-200">
+      {/* Modal para Escanear Código QR con el Celular */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <h3 className="text-xl font-bold text-white mb-1">Abrir en tu Celular</h3>
+            <p className="text-xs text-slate-300 mb-4 font-medium">{brochure.title}</p>
+
+            <QrCodeCard
+              value={qrTargetUrl}
+              subtitle="Apunta la cámara de tu smartphone para abrir o descargar este documento PDF"
+              size={200}
+              showLink={true}
+              className="mx-auto"
+            />
+
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="mt-5 w-full py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl text-sm transition"
+            >
+              CERRAR
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between text-white">
         <div className="flex items-center gap-3">
@@ -202,12 +259,22 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="p-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
-        >
-          <X className="w-7 h-7" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowQrModal(true)}
+            className="px-3.5 py-2.5 bg-brand-700 hover:bg-brand-600 active:bg-brand-800 text-white rounded-xl border border-brand-500 font-bold text-xs flex items-center gap-1.5 transition shadow"
+            title="Escanear QR para abrir en tu celular"
+          >
+            <QrIcon className="w-4 h-4" />
+            <span>Ver QR en Móvil</span>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+          >
+            <X className="w-7 h-7" />
+          </button>
+        </div>
       </div>
 
       {/* Main Document Viewer Canvas */}
@@ -252,26 +319,36 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
             </>
             <span className="font-semibold">Página {currentPage} de {totalPages}</span>
             {hasPdf && (
-              <button
-                type="button"
-                onClick={() => {
-                  // Trigger download of bundled PDF (works for local module URLs)
-                  try {
-                    const link = document.createElement('a');
-                    link.href = brochure.pdfUrl as string;
-                    link.download = `${brochure.title}.pdf`;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                  } catch (e) {
-                    // Fallback: do nothing, PDF is still viewable inline via pdfjs
-                    console.error('No se pudo descargar el PDF localmente', e);
-                  }
-                }}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-cyan-300 hover:bg-slate-700"
-              >
-                Descargar PDF
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-emerald-300 hover:bg-slate-700"
+                >
+                  <QrIcon className="w-4 h-4" />
+                  <span>Código QR</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Trigger download of bundled PDF (works for local module URLs)
+                    try {
+                      const link = document.createElement('a');
+                      link.href = brochure.pdfUrl as string;
+                      link.download = `${brochure.title}.pdf`;
+                      document.body.appendChild(link);
+                      link.click();
+                      link.remove();
+                    } catch (e) {
+                      // Fallback: do nothing, PDF is still viewable inline via pdfjs
+                      console.error('No se pudo descargar el PDF localmente', e);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-cyan-300 hover:bg-slate-700"
+                >
+                  Descargar PDF
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -305,20 +382,20 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
         </div>
 
         {/* Primary Call to Action Buttons */}
-        <div className="grid grid-cols-2 items-stretch gap-2 md:gap-3 max-w-xl mx-auto">
+        <div className="grid grid-cols-2 items-stretch gap-3 md:gap-4 max-w-xl mx-auto pt-1">
           <button
             onClick={() => onSendToEmail(brochure)}
-            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[88px] bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-extrabold rounded-lg border border-red-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg touch-cta"
+            className="w-full min-w-0 py-4 px-4 min-h-[84px] bg-brand-800 hover:bg-brand-700 active:bg-brand-950 text-white font-black rounded-2xl border-2 border-brand-600 flex items-center justify-center gap-2.5 text-sm md:text-base transition shadow-xl touch-cta"
           >
-            <Mail className="w-4 h-4 shrink-0 text-red-200" />
+            <Mail className="w-5 h-5 shrink-0 text-accent-400" />
             <span className="leading-tight">ENVIAR A MI CORREO</span>
           </button>
 
           <button
             onClick={() => onRequestSpecialist(brochure)}
-            className="w-full min-w-0 py-2 px-2 md:px-3 min-h-[88px] bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white font-bold rounded-lg border border-slate-600 flex items-center justify-center gap-1.5 text-xs md:text-sm transition shadow-lg touch-cta"
+            className="w-full min-w-0 py-4 px-4 min-h-[84px] bg-accent-500 hover:bg-accent-400 active:bg-accent-600 text-white font-black rounded-2xl border-2 border-accent-300 flex items-center justify-center gap-2.5 text-sm md:text-base transition shadow-xl touch-cta"
           >
-            <UserCheck className="w-4 h-4 shrink-0 text-emerald-400" />
+            <UserCheck className="w-5 h-5 shrink-0 text-white" />
             <span className="leading-tight">QUIERO ASESORÍA</span>
           </button>
         </div>

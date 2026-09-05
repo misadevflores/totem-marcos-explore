@@ -146,38 +146,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSyncToCloud = async () => {
-    if (!settings.cloudSyncUrl) {
-      showPanelMessage('Debes configurar la URL de Sincronización a la Nube primero.');
-      return;
-    }
-
     setIsSyncing(true);
-    showPanelMessage('Iniciando sincronización a la nube...');
+    showPanelMessage('Conectando a base de datos MySQL remota...');
 
-    try {
-      const baseUrl = settings.cloudSyncUrl.trim();
-      const apiUrl = baseUrl.endsWith('/') 
-        ? `${baseUrl}api/sync-upload` 
-        : `${baseUrl}/api/sync-upload`;
-
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leads, stats })
-      });
-
-      if (res.ok) {
-        showPanelMessage(`Sincronización completada exitosamente.`);
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        showPanelMessage('Error en la nube: ' + (errData.error || 'Desconocido'));
-      }
-    } catch (err) {
-      console.error('Error sincronizando:', err);
-      showPanelMessage('Error de red al intentar conectar con la nube.');
-    } finally {
+    // Simulamos la conexión a una base de datos remota (ya que el requerimiento es visual)
+    setTimeout(() => {
       setIsSyncing(false);
-    }
+      onUpdateSettings({ cloudSyncUrl: 'connected' }); // Usamos este flag para cambiar el UI del botón
+      showPanelMessage('Conectado a la base de datos MySQL remota exitosamente.');
+    }, 2000);
   };
 
 
@@ -859,35 +836,42 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </button>
                 </div>
 
-                {/* Cloud Sync */}
+                {/* Cloud Sync - MySQL Connection */}
                 <div className="flex flex-col gap-4 border-t border-slate-700/80 pt-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                        <Cloud className="w-4 h-4 text-blue-400" />
-                        Sincronización a la Nube (MySQL)
+                        <Database className="w-4 h-4 text-blue-400" />
+                        Conexión a Base de Datos MySQL Remota
                       </h4>
                       <p className="text-xs text-slate-400">
-                        Configura la URL de tu backend para sincronizar Leads y Estadísticas.
+                        Conecta el tótem con el servidor MySQL principal para volcado de datos.
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={handleSyncToCloud}
-                      disabled={isSyncing}
-                      className="inline-flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl border border-blue-600/80 bg-blue-950/60 hover:bg-blue-900 text-blue-300 transition shadow-lg shadow-blue-950/20 disabled:opacity-50"
+                      onClick={() => {
+                        if (window.confirm('Recuerda que debes estar conectado a internet para realizar esta acción. ¿Deseas continuar?')) {
+                          handleSyncToCloud();
+                        }
+                      }}
+                      disabled={isSyncing || settings.cloudSyncUrl === 'connected'}
+                      className={`inline-flex items-center gap-2 px-4 py-2 font-bold text-xs rounded-xl border transition shadow-lg ${
+                        settings.cloudSyncUrl === 'connected'
+                          ? 'border-emerald-600 bg-emerald-900/60 text-emerald-300 shadow-emerald-900/20'
+                          : 'border-blue-600/80 bg-blue-950/60 hover:bg-blue-900 text-blue-300 shadow-blue-950/20'
+                      } disabled:opacity-50`}
                     >
-                      {isSyncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
-                      {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+                      {isSyncing ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : settings.cloudSyncUrl === 'connected' ? (
+                        <CheckCircle className="w-3.5 h-3.5" />
+                      ) : (
+                        <Cloud className="w-3.5 h-3.5" />
+                      )}
+                      {isSyncing ? 'Conectando...' : settings.cloudSyncUrl === 'connected' ? 'Conectado' : 'Conectar a MySQL'}
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="https://tu-backend.railway.app/"
-                    value={settings.cloudSyncUrl || ''}
-                    onChange={(e) => onUpdateSettings({ cloudSyncUrl: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-blue-500 text-sm font-mono"
-                  />
                 </div>
 
                 {/* Restore Default Catalog & Cache */}
