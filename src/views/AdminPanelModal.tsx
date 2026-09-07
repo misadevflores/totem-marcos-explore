@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Lead, KioskSettings, Category, Brochure } from '../types';
+import { CategoryIcon } from '../components/CategoryIcon';
 import marcoLogo from '../../assets/imgi_2_logo-marco-COLOR.svg';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -65,6 +66,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [pdfUploadStatus, setPdfUploadStatus] = useState<string | null>(null);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [iconUploadStatus, setIconUploadStatus] = useState<string | null>(null);
 
   const showPanelMessage = (msg: string) => {
     setPanelMessage(msg);
@@ -233,6 +236,76 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const updateBrochureField = (field: keyof Brochure, value: string | number | string[]) => {
     setEditingBrochure(current => current ? { ...current, [field]: value } : current);
+  };
+
+  const handleCategoryIconUpload = async (file?: File) => {
+    if (!file || !editingCategory) return;
+    if (!file.type.startsWith('image/') && !file.name.toLowerCase().endsWith('.svg')) {
+      setContentError('Selecciona un archivo de imagen válido (SVG, PNG, JPG, WebP).');
+      return;
+    }
+
+    setIsUploadingIcon(true);
+    setIconUploadStatus('Procesando icono...');
+    setContentError('');
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const base64Data = String(reader.result);
+          const apiUrl = (typeof window !== 'undefined' && window.location.hostname !== 'localhost') 
+            ? '/api/upload-icon' 
+            : 'http://localhost:3001/api/upload-icon';
+
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: file.name,
+              base64Data,
+            }),
+          });
+
+          let iconPath = '';
+          if (response.ok) {
+            const data = await response.json();
+            iconPath = data.url;
+          } else {
+            iconPath = base64Data;
+          }
+
+          setEditingCategory(curr => curr ? {
+            ...curr,
+            iconUrl: iconPath,
+          } : curr);
+
+          setIsUploadingIcon(false);
+          setIconUploadStatus(null);
+          showPanelMessage('Icono subido correctamente');
+        } catch (uploadErr) {
+          console.warn('[Icon Upload] Fallback a Base64:', uploadErr);
+          setEditingCategory(curr => curr ? {
+            ...curr,
+            iconUrl: String(reader.result),
+          } : curr);
+          setIsUploadingIcon(false);
+          setIconUploadStatus(null);
+          showPanelMessage('Icono cargado correctamente');
+        }
+      };
+      reader.onerror = () => {
+        setIsUploadingIcon(false);
+        setIconUploadStatus(null);
+        setContentError('No se pudo leer el archivo de imagen.');
+      };
+    } catch (err: any) {
+      console.error('Error procesando icono:', err);
+      setIsUploadingIcon(false);
+      setIconUploadStatus(null);
+      setContentError(`No se pudo procesar el icono: ${err?.message || 'archivo inválido'}`);
+    }
   };
 
   const handlePdfUpload = async (file?: File) => {
@@ -630,9 +703,75 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     </label>
 
                     <label className="space-y-2 md:col-span-1">
-                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Código</span>
-                      <input value={editingCategory.code} onChange={e => updateCategoryField('code', e.target.value)} placeholder="Código" className={panelInputClass} />
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Código interno</span>
+                      <input value={editingCategory.code} onChange={e => updateCategoryField('code', e.target.value)} placeholder="01, 02..." className={panelInputClass} />
                     </label>
+
+                    {/* Subir Icono de Categoría */}
+                    <div className="space-y-3 md:col-span-2 rounded-xl border border-slate-700/80 bg-slate-950/60 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-300 flex items-center gap-2">
+                          <Upload className="w-4 h-4 text-red-400" />
+                          Icono de la Categoría (para mostrar en el catálogo en vez de código)
+                        </span>
+                        {editingCategory.iconUrl && (
+                          <button
+                            type="button"
+                            onClick={() => updateCategoryField('iconUrl', '')}
+                            className="text-xs text-red-400 hover:text-red-300 underline font-semibold flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Quitar icono subido
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        {/* Preview Box */}
+                        <div 
+                          className="w-20 h-20 rounded-2xl border-2 border-slate-600 flex items-center justify-center shrink-0 shadow-inner bg-[#003067] overflow-hidden"
+                        >
+                          <CategoryIcon 
+                            category={editingCategory} 
+                            className="w-full h-full object-cover" 
+                            vectorClassName="w-10 h-10 text-white" 
+                          />
+                        </div>
+
+                        {/* Upload Drop/Button */}
+                        <label className="flex-1 w-full flex flex-col justify-center rounded-xl border border-dashed border-slate-600 bg-slate-900/60 p-3.5 text-xs text-slate-300 transition hover:border-red-400 hover:bg-slate-900 cursor-pointer">
+                          <div className="flex items-center gap-3">
+                            <Upload className="w-5 h-5 text-red-400 shrink-0" />
+                            <div className="flex-1">
+                              <p className="font-bold text-white text-sm">
+                                {editingCategory.iconUrl
+                                  ? `Icono personalizado cargado (${editingCategory.iconUrl.startsWith('data:') ? 'Imagen local' : editingCategory.iconUrl})`
+                                  : 'Subir icono (SVG, PNG, JPG, WebP)'}
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                Toca o arrastra para subir el icono que se mostrará en las tarjetas del catálogo.
+                              </p>
+                            </div>
+                            {isUploadingIcon && (
+                              <span className="text-xs font-bold text-red-400 animate-pulse">
+                                Subiendo...
+                              </span>
+                            )}
+                          </div>
+                          {iconUploadStatus && (
+                            <p className="text-xs text-red-300 font-mono bg-red-950/60 p-2 rounded-lg border border-red-800 mt-2">
+                              {iconUploadStatus}
+                            </p>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*,.svg,.png,.jpg,.jpeg,.webp"
+                            disabled={isUploadingIcon}
+                            onChange={e => handleCategoryIconUpload(e.target.files?.[0])}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
 
                     <label className="space-y-2 md:col-span-1">
                       <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Subtítulo</span>
@@ -775,7 +914,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               )}
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Categorías ({categories.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{[...categories].sort((a, b) => { const na = parseInt(a.code, 10) || 0; const nb = parseInt(b.code, 10) || 0; return na !== nb ? na - nb : a.code.localeCompare(b.code); }).map(category => <div key={category.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div><p className="font-bold text-white">{category.code} · {category.title}</p><p className="text-xs text-slate-400">{brochures.filter(item => item.categoryId === category.id).length} PDF</p></div><div className="flex gap-1"><button type="button" title="Editar categoría" onClick={() => setEditingCategory({ ...category })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar categoría" onClick={() => removeCategory(category.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
+                <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Categorías ({categories.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{[...categories].sort((a, b) => { const na = parseInt(a.code, 10) || 0; const nb = parseInt(b.code, 10) || 0; return na !== nb ? na - nb : a.code.localeCompare(b.code); }).map(category => <div key={category.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-slate-600 shadow-sm bg-[#003067] overflow-hidden"><CategoryIcon category={category} className="w-full h-full object-cover" vectorClassName="w-5 h-5 text-white" /></div><div><p className="font-bold text-white">{category.title}</p><p className="text-xs text-slate-400">{brochures.filter(item => item.categoryId === category.id).length} PDF</p></div></div><div className="flex gap-1"><button type="button" title="Editar categoría" onClick={() => setEditingCategory({ ...category })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar categoría" onClick={() => removeCategory(category.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
                 <section className="rounded-xl border border-slate-700 bg-slate-800/70 overflow-hidden"><div className="px-4 py-3 border-b border-slate-700 flex justify-between"><h4 className="font-bold">Brochures / PDF ({brochures.length})</h4><span className="text-xs text-slate-400">Editar o borrar</span></div>{(() => { const codeOf: Record<string, number> = {}; categories.forEach(c => { codeOf[c.id] = parseInt(c.code, 10) || 0; }); return [...brochures].sort((a, b) => { const ca = codeOf[a.categoryId] ?? 999; const cb = codeOf[b.categoryId] ?? 999; return ca !== cb ? ca - cb : a.title.localeCompare(b.title); }); })().map(brochure => <div key={brochure.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/70"><div className="min-w-0"><p className="font-bold text-white truncate">{brochure.title}</p><p className="text-xs text-slate-400 truncate">{categories.find(item => item.id === brochure.categoryId)?.title || 'Sin categoría'} · {brochure.pdfUrl ? 'PDF cargado' : 'Sin PDF'}</p></div><div className="flex gap-1"><button type="button" title="Editar brochure" onClick={() => setEditingBrochure({ ...brochure })} className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"><Edit2 className="w-4 h-4" /></button><button type="button" title="Borrar brochure" onClick={() => removeBrochure(brochure.id)} className="p-2 rounded-lg hover:bg-red-950 text-red-300"><Trash2 className="w-4 h-4" /></button></div></div>)}</section>
               </div>
             </div>

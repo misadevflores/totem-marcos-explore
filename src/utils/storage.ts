@@ -69,6 +69,7 @@ function toCategory(r: Record<string, unknown>): Category {
     applications: parseJsonArray(r.applications),
     brochureCount: Number(r.brochure_count) || 0,
     iconName: String(r.icon_name ?? 'BookOpen'),
+    iconUrl: r.icon_url ? String(r.icon_url) : undefined,
   };
 }
 
@@ -125,7 +126,8 @@ const SCHEMA_STATEMENTS = [
     banner_description TEXT NOT NULL,
     applications TEXT NOT NULL DEFAULT '[]',
     brochure_count INTEGER NOT NULL DEFAULT 0,
-    icon_name TEXT NOT NULL
+    icon_name TEXT NOT NULL,
+    icon_url TEXT
   )`,
   `CREATE TABLE IF NOT EXISTS brochures (
     id TEXT PRIMARY KEY,
@@ -222,13 +224,14 @@ async function seedDatabaseDefaults(db: any): Promise<void> {
   for (const c of INITIAL_CATEGORIES) {
     statements.push(`INSERT OR REPLACE INTO categories (
       id, code, title, subtitle, color, bg_light, banner_title,
-      banner_description, applications, brochure_count, icon_name
+      banner_description, applications, brochure_count, icon_name, icon_url
     ) VALUES (
       '${esc(c.id)}','${esc(c.code)}','${esc(c.title)}','${esc(c.subtitle)}',
       '${esc(c.color)}','${esc(c.bgLight)}','${esc(c.bannerTitle)}',
       '${esc(c.bannerDescription)}',
       '${esc(JSON.stringify(c.applications))}',
-      ${Number(c.brochureCount) || 0},'${esc(c.iconName)}'
+      ${Number(c.brochureCount) || 0},'${esc(c.iconName)}',
+      ${c.iconUrl ? `'${esc(c.iconUrl)}'` : 'NULL'}
     )`);
   }
 
@@ -270,6 +273,9 @@ async function loadAll(): Promise<void> {
   const db = getAdapter();
   try {
     await db.batch(SCHEMA_STATEMENTS);
+    try {
+      await db.execute('ALTER TABLE categories ADD COLUMN icon_url TEXT;');
+    } catch {}
   } catch (e) {
     console.warn('[DB] Schema check:', e);
   }
@@ -558,13 +564,14 @@ export async function saveCategories(categories: Category[]): Promise<boolean> {
     for (const c of categories) {
       statements.push(`INSERT OR REPLACE INTO categories (
         id, code, title, subtitle, color, bg_light, banner_title,
-        banner_description, applications, brochure_count, icon_name
+        banner_description, applications, brochure_count, icon_name, icon_url
       ) VALUES (
         '${esc(c.id)}','${esc(c.code ?? '')}','${esc(c.title ?? '')}','${esc(c.subtitle ?? '')}',
         '${esc(c.color ?? '#991b1b')}','${esc(c.bgLight ?? '#fff7f7')}','${esc(c.bannerTitle ?? '')}',
         '${esc(c.bannerDescription ?? '')}',
         '${esc(JSON.stringify(c.applications ?? []))}',
-        ${Number(c.brochureCount) || 0},'${esc(c.iconName ?? 'BookOpen')}'
+        ${Number(c.brochureCount) || 0},'${esc(c.iconName ?? 'BookOpen')}',
+        ${c.iconUrl ? `'${esc(c.iconUrl)}'` : 'NULL'}
       )`);
     }
     await getAdapter().batch(statements);

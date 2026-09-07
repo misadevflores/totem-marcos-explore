@@ -1,5 +1,6 @@
 import React from 'react';
 import { Category, Brochure } from '../types';
+import { CategoryIcon } from '../components/CategoryIcon';
 import { FileText, ArrowRight, UserCheck, CheckCircle2 } from 'lucide-react';
 
 interface CategoryDetailViewProps {
@@ -23,11 +24,16 @@ export const CategoryDetailView: React.FC<CategoryDetailViewProps> = ({
 
   return (
     <div className="flex-1 w-full h-full flex flex-col justify-between bg-marco-bg text-brand-800 overflow-y-auto select-none p-6 md:p-8 lg:p-12">
-      <div className="w-full h-full flex flex-col justify-between max-w-[920px] mx-auto space-y-8">
+      <div className="w-full min-h-[100dvh] pb-32 flex flex-col justify-between max-w-[920px] mx-auto space-y-8">
         {/* Category Brand Banner Block */}
         <div className="bg-gradient-to-br from-brand-800 via-brand-700 to-brand-900 p-10 lg:p-12 rounded-3xl border border-brand-600 shadow-xl space-y-5 shrink-0">
-          <div className="inline-block px-5 py-2 bg-white/10 border border-accent-400/60 rounded-xl text-sm sm:text-base font-black text-accent-300 uppercase tracking-widest">
-            {category.code} · {category.title}
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-[#003067] border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-md">
+              <CategoryIcon category={category} className="w-full h-full object-cover" vectorClassName="w-8 h-8 text-white" />
+            </div>
+            <div className="inline-block px-5 py-2 bg-white/10 border border-accent-400/60 rounded-xl text-sm sm:text-base font-black text-accent-300 uppercase tracking-widest">
+              {category.title}
+            </div>
           </div>
           <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight uppercase leading-tight">
             {category.bannerTitle}

@@ -60,7 +60,8 @@ function mapCategoryRow(row: Record<string, unknown>): Category {
     bannerDescription: String(row.banner_description),
     applications: parseJsonArray(row.applications),
     brochureCount: Number(row.brochure_count) || 0,
-    iconName: String(row.icon_name)
+    iconName: String(row.icon_name),
+    iconUrl: row.icon_url ? String(row.icon_url) : undefined
   };
 }
 
@@ -402,7 +403,7 @@ export async function saveCategories(categories: Category[]): Promise<void> {
     for (const cat of categories) {
       const sqlStr = `INSERT OR REPLACE INTO categories (
         id, code, title, subtitle, color, bg_light, banner_title, banner_description,
-        applications, brochure_count, icon_name
+        applications, brochure_count, icon_name, icon_url
       ) VALUES (
         '${cat.id}',
         '${cat.code}',
@@ -414,7 +415,8 @@ export async function saveCategories(categories: Category[]): Promise<void> {
         '${cat.bannerDescription.replace(/'/g, "''")}',
         '${JSON.stringify(cat.applications).replace(/'/g, "''")}',
         ${cat.brochureCount},
-        '${cat.iconName}'
+        '${cat.iconName}',
+        ${cat.iconUrl ? `'${cat.iconUrl.replace(/'/g, "''")}'` : 'NULL'}
       )`;
       await apiExecute(sqlStr);
     }

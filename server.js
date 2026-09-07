@@ -19,11 +19,50 @@ if (!fs.existsSync(PDFS_DIR)) {
   fs.mkdirSync(PDFS_DIR, { recursive: true });
 }
 
+const ICONS_DIR = path.join(__dirname, 'public', 'icons');
+if (!fs.existsSync(ICONS_DIR)) {
+  fs.mkdirSync(ICONS_DIR, { recursive: true });
+}
+
+// Sincronizar iconos por defecto desde assets/icons a public/icons
+const ASSETS_ICONS_DIR = path.join(__dirname, 'assets', 'icons');
+const DEFAULT_ICON_MAP = {
+  'lubricacion-industrial': 'Lubricacion Industrial.png',
+  'lubricacion-minera': 'Lubricación Minera.png',
+  'herramientas-hidraulicas': 'Herramientas HIdráulicas.png',
+  'transformacion-materiales': 'Transformación de Materiales.png',
+  'filtracion-industrial': 'Filtración Industrial.png',
+  'marco-lab': 'Marco Lab.png',
+  'mangueras-oleo-hidraulicas': 'Mangueras Oleo Hidráulicas.png',
+  'componentes-oleo-hidraulicos': 'Componentes y Sistemas Oleo Hidráulicos.png',
+  'transmision-potencia': 'Transmisión de Potencia.png',
+  'soluciones-ingenieria-mineria': 'Souciones de Ingeniería para Minería.png',
+  'sistemas-lubricacion': 'Sistemas de Lubricación.png',
+  'soluciones-anti-desgaste': 'Soluciones Antidesgaste.png',
+};
+
+if (fs.existsSync(ASSETS_ICONS_DIR)) {
+  for (const [catId, filename] of Object.entries(DEFAULT_ICON_MAP)) {
+    const src = path.join(ASSETS_ICONS_DIR, filename);
+    if (fs.existsSync(src)) {
+      const destNorm = path.join(ICONS_DIR, `${catId}.png`);
+      const destOrig = path.join(ICONS_DIR, filename);
+      try {
+        if (!fs.existsSync(destNorm)) fs.copyFileSync(src, destNorm);
+        if (!fs.existsSync(destOrig)) fs.copyFileSync(src, destOrig);
+      } catch (e) {
+        console.warn(`[ICONS] Error copiando ${filename}:`, e.message);
+      }
+    }
+  }
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use('/pdfs', express.static(PDFS_DIR));
+app.use('/icons', express.static(ICONS_DIR));
 
 const CATALOGO_PDFS_DIR = path.join(__dirname, 'catalogo_pdfs');
 if (!fs.existsSync(CATALOGO_PDFS_DIR)) {
@@ -80,6 +119,9 @@ async function initDatabase() {
       } else {
         const [rows] = await mysqlPool.query("SELECT count(*) as count FROM categories");
         console.log(`[DB] MySQL activo con ${rows[0].count} categorías.`);
+        try {
+          await mysqlPool.query("ALTER TABLE categories ADD COLUMN icon_url TEXT");
+        } catch {}
       }
     } catch (err) {
       console.error('[DB ERROR MYSQL]', err.message);
@@ -99,6 +141,9 @@ async function initDatabase() {
       if (tableCheck) {
         const row = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
         categoryCount = row ? row.count : 0;
+        try {
+          sqliteDb.exec("ALTER TABLE categories ADD COLUMN icon_url TEXT;");
+        } catch {}
       }
 
       if (!tableCheck || categoryCount === 0) {
@@ -183,6 +228,35 @@ app.post('/api/upload-pdf', (req, res) => {
     res.json({ success: true, url: fileUrl, filename: safeName, size: buffer.length });
   } catch (err) {
     console.error('[PDF UPLOAD ERROR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint para subir Iconos/Imágenes de categoría directamente al disco
+app.post('/api/upload-icon', (req, res) => {
+  try {
+    const { filename, base64Data } = req.body;
+    if (!filename || !base64Data) {
+      return res.status(400).json({ error: 'Nombre de archivo y contenido requeridos' });
+    }
+    if (!fs.existsSync(ICONS_DIR)) {
+      fs.mkdirSync(ICONS_DIR, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const cleanOriginalName = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const safeName = `${timestamp}_${cleanOriginalName}`;
+    const filePath = path.join(ICONS_DIR, safeName);
+
+    const base64Clean = base64Data.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64Clean, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    console.log('[ICON UPLOAD] Guardado en carpeta:', safeName, `(${buffer.length} bytes)`);
+    const fileUrl = `./icons/${safeName}`;
+    res.json({ success: true, url: fileUrl, filename: safeName, size: buffer.length });
+  } catch (err) {
+    console.error('[ICON UPLOAD ERROR]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

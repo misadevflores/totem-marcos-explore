@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS categories (
   banner_description TEXT NOT NULL,
   applications TEXT NOT NULL DEFAULT '[]',
   brochure_count INTEGER NOT NULL DEFAULT 0,
-  icon_name TEXT NOT NULL
+  icon_name TEXT NOT NULL,
+  icon_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS brochures (
@@ -72,10 +73,9 @@ CREATE TABLE IF NOT EXISTS stats (
   key TEXT PRIMARY KEY,
   value INTEGER NOT NULL
 );
-
 -- CATEGORÍAS (12 reales)
 INSERT OR REPLACE INTO categories (
-  id, code, title, subtitle, color, bg_light, banner_title, banner_description, applications, brochure_count, icon_name
+  id, code, title, subtitle, color, bg_light, banner_title, banner_description, applications, brochure_count, icon_name, icon_url
 ) VALUES
   (
     'lubricacion-industrial', '01', 'Lubricación Industrial',
@@ -83,7 +83,7 @@ INSERT OR REPLACE INTO categories (
     '#8B002A', '#FDF2F4', 'Lubricación Industrial',
     'Soluciones especializadas de lubricación para proteger componentes, reducir el desgaste y mejorar la confiabilidad de equipos y procesos industriales, incluso bajo condiciones exigentes de operación.',
     '["• Reductores y cajas de engranajes: protección frente al desgaste, altas cargas y temperaturas.","• Rodamientos y sistemas de transmisión: lubricación para motores, ventiladores, bombas y equipos rotativos.","• Compresores y sistemas hidráulicos: lubricantes para una operación eficiente, estable y confiable.","• Maquinaria y procesos industriales: soluciones para equipos de producciónsometidos a operación continua y condiciones exigentes."]',
-    2, 'Droplets'
+    2, 'Droplets', '/icons/lubricacion-industrial.png'
   ),
   (
     'lubricacion-minera', '02', 'Lubricación Minera',
@@ -91,7 +91,7 @@ INSERT OR REPLACE INTO categories (
     '#7C1D1D', '#FEF2F2', 'Lubricación Minera',
     'Soluciones de lubricación de alto desempeño desarrolladas para proteger equipos y componentes críticos, extender su vida útil y mejorar la confiabilidad de las operaciones mineras, incluso bajo condiciones extremas de carga, temperatura, polvo y contaminación.',
     '["• Equipos móviles de mina: lubricación para camiones, palas, cargadores, perforadoras y maquinaria pesada.","• Chancado y molienda: protección de chancadoras, molinos, engranajes abiertos, rodamientos y componentes sometidos a altas cargas.","• Fajas y sistemas de transporte: lubricación de rodamientos, reductores y mecanismos de transmisión.","• Equipos de planta concentradora: soluciones para bombas, motores, celdas de flotación y otros equipos críticos del proceso."]',
-    2, 'Droplets'
+    2, 'Droplets', '/icons/lubricacion-minera.png'
   ),
   (
     'herramientas-hidraulicas', '03', 'Herramientas Hidráulicas',
@@ -99,7 +99,7 @@ INSERT OR REPLACE INTO categories (
     '#1E2530', '#F1F5F9', 'Herramientas Hidráulicas',
     'Soluciones hidráulicas de alta presión para generar y controlar grandes fuerzas con precisión y seguridad en trabajos de mantenimiento, montaje y reparación de equipos industriales y mineros.',
     '["• Elevación y posicionamiento de cargas: cilindros y gatos hidráulicos para levantar, nivelar y posicionar equipos y componentes pesados.","• Montaje y desmontaje de componentes: herramientas para facilitar trabajos de extracción, separación, empuje y ajuste de piezas.","• Mantenimiento de equipos pesados: soluciones hidráulicas para intervenciones seguras y eficientes en maquinaria y equipos de gran tamaño.","• Torque y tensionado: herramientas hidráulicas para el ajuste y control preciso de uniones empernadas en aplicaciones críticas."]',
-    2, 'Wrench'
+    2, 'Wrench', '/icons/herramientas-hidraulicas.png'
   ),
   (
     'transformacion-materiales', '04', 'Transformación de Materiales',
@@ -107,7 +107,7 @@ INSERT OR REPLACE INTO categories (
     '#991B1B', '#FEF2F2', 'Transformación de Materiales',
     'Soluciones especializadas en trituración, molienda y procesamiento de materiales, integrando equipos, repuestos y piezas de desgaste diseñados para brindar alto rendimiento y confiabilidad en operaciones exigentes.',
     '["• Trituración y cribado: equipos y componentes para trituradoras de mandíbulas, conos, HSI, VSI y sistemas de clasificación de materiales.","• Piezas de desgaste: repuestos y componentes fabricados en aleaciones especiales para aplicaciones sometidas a abrasión, impacto y altas exigencias operativas.","• Molienda: blindajes, placas y rejillas para molinos, desarrollados de acuerdo con las condiciones específicas de cada operación.","• Manejo de lodos: componentes y repuestos para bombas de lodos, incluyendo carcasas, rodetes y tapas en aleaciones anti-desgaste."]',
-    1, 'Boxes'
+    1, 'Boxes', '/icons/transformacion-materiales.png'
   ),
   (
     'filtracion-industrial', '05', 'Filtración Industrial',
@@ -115,7 +115,7 @@ INSERT OR REPLACE INTO categories (
     '#065F46', '#ECFDF5', 'Filtración Industrial',
     'Soluciones para la purificación y control de contaminación en combustibles y aceites, orientadas a proteger componentes críticos, reducir fallas y mejorar la confiabilidad y disponibilidad de los equipos.',
     '["• Purificación de combustible diésel: separación de agua y partículas contaminantes para proteger motores y sistemas de inyección.","• Aceites hidráulicos: control de contaminación para mantener la confiabilidad y prolongar la vida útil de componentes hidráulicos.","• Equipos y motores diésel: protección de sistemas críticos frente a contaminantes que generan desgaste, fallas y mantenimiento no planificado.","• Grupos electrógenos y sistemas industriales: tratamiento de combustibles y aceites para favorecer una operación continua y confiable."]',
-    2, 'Filter'
+    2, 'Filter', '/icons/filtracion-industrial.png'
   ),
   (
     'marco-lab', '06', 'MARCO Lab',
@@ -123,7 +123,7 @@ INSERT OR REPLACE INTO categories (
     '#1E3A8A', '#EFF6FF', 'MARCO Lab',
     'Laboratorio especializado en análisis de lubricantes y monitoreo de condición, orientado a identificar contaminación, desgaste y cambios en las propiedades del lubricante para contribuir a la confiabilidad y disponibilidad de los equipos.',
     '["• Análisis de aceites lubricantes: evaluación de la condición del lubricante para detectar cambios que puedan afectar el desempeño de los equipos.","• Monitoreo de desgaste: identificación de partículas y contaminantes asociados al desgaste de componentes.","• Control de contaminación: medición y conteo de partículas en aceites hidráulicos, lubricantes y combustibles.","• Mantenimiento predictivo: generación de información para apoyar la toma de decisiones, anticipar fallas y optimizar los intervalos de mantenimiento."]',
-    2, 'FlaskConical'
+    2, 'FlaskConical', '/icons/marco-lab.png'
   ),
   (
     'mangueras-oleo-hidraulicas', '07', 'Mangueras Oleo Hidráulicas',
@@ -131,7 +131,7 @@ INSERT OR REPLACE INTO categories (
     '#92400E', '#FFFBEB', 'Mangueras Oleo Hidráulicas',
     'Confiabilidad y resistencia para sistemas hidráulicos de alta exigencia. Soluciones en mangueras y conexiones oleohidráulicas Danfoss, diseñadas para responder a diferentes condiciones de presión, temperatura y resistencia a la abrasión, con alternativas para diversas aplicaciones en minería e industria.',
     '["• Mangueras hidráulicas trenzadas de 1 y 2 hilos.","• Mangueras hidráulicas espirales de 4 hilos.","• Mangueras termoplásticas.","• Mangueras estándar y de alto rendimiento.","• Conexiones y accesorios.","• Soluciones y conjuntos para diferentes requerimientos de sistemas hidráulicos."]',
-    2, 'Zap'
+    2, 'Zap', '/icons/mangueras-oleo-hidraulicas.png'
   ),
   (
     'componentes-oleo-hidraulicos', '08', 'Componentes y Sistemas Oleo Hidráulicos',
@@ -139,15 +139,15 @@ INSERT OR REPLACE INTO categories (
     '#3B0764', '#FAF5FF', 'Componentes y Sistemas Oleo Hidráulicos',
     'Soluciones en componentes oleo hidráulicos y control de movimiento para maquinaria y sistemas de minería e industria, con un portafolio multimarca para aplicaciones de media y alta presión.',
     '["• Bombas hidráulicas: bombas de pistones, paletas y otras configuraciones para sistemas industriales y equipos móviles.","• Motores hidráulicos: soluciones de alto torque y baja velocidad para maquinaria minera e industrial.","• Válvulas y control: válvulas modulares, direccionales y soluciones electrohidráulicas para el control preciso de los sistemas.","• Unidades de potencia hidráulica (UPH): diseño e integración de sistemas con bombas, motores, válvulas, tanques, filtración y sistemas de control."]',
-    1, 'Settings'
+    1, 'Settings', '/icons/componentes-oleo-hidraulicos.png'
   ),
   (
     'transmision-potencia', '09', 'Transmisión de Potencia',
     'Soluciones para la transmisión, control y gestión de potencia mecánica',
     '#1C4532', '#F0FDF4', 'Transmisión de Potencia',
     'Soluciones para la transmisión, control y gestión de potencia mecánica en equipos industriales y mineros, integrando tecnologías de alto desempeño para aplicaciones sometidas a elevados torques y condiciones exigentes de operación.',
-    '["• Reductores y accionamientos: reductores planetarios, helicoidales y cónico-helicoidales para maquinaria y equipos industriales de alta exigencia.","• Acoplamientos: soluciones para la transmisión de potencia entre equipos motrices y accionados en aplicaciones industriales y mineras.","• Sistemas de frenado: frenos industriales para el control y parada segura de equipos y sistemas de movimiento. VULKAN incluye específicamente soluciones de frenado hidráulico para aplicaciones industriales.","• Accionamientos de alto torque: soluciones para aplicaciones que requieren elevada capacidad de transmisión, incluyendo manejo de materiales, minería y equipos industriales de alta potencia."]',
-    2, 'Settings'
+    '["• Reductores y accionamientos: reductores planetarios, helicoidales y cónico-helicoidales para maquinaria y equipos industriales de alta exigencia.","• Acoplamientos: soluciones para la transmisión de potencia entre equipos motrices y accionados en aplicaciones industriales y mineras.", "• Sistemas de frenado: frenos industriales para el control y parada segura de equipos y sistemas de movimiento. VULKAN incluye específicamente soluciones de frenado hidráulico para aplicaciones industriales.", "• Accionamientos de alto torque: soluciones para aplicaciones que requieren elevada capacidad de transmisión, incluyendo manejo de materiales, minería y equipos industriales de alta potencia."]',
+    2, 'Settings', '/icons/transmision-potencia.png'
   ),
   (
     'soluciones-ingenieria-mineria', '10', 'Soluciones de Ingeniería para Minería',
@@ -155,7 +155,7 @@ INSERT OR REPLACE INTO categories (
     '#0C4A6E', '#F0F9FF', 'Soluciones de Ingeniería para Minería',
     'Diseñamos y desarrollamos soluciones de ingeniería a medida para optimizar tareas críticas de mantenimiento en operaciones mineras, orientadas a reducir tiempos de intervención, mejorar la seguridad y aumentar la eficiencia operativa.',
     '["• Mantenimiento de molinos: plataformas hidráulicas y soluciones para facilitar trabajos en molinos SAG y de bolas, incluyendo cambio de revestimientos y extracción de pernos.","• Mantenimiento de chancadoras: sistemas especializados para extracción, manipulación y mantenimiento de componentes críticos en chancado primario.","• Izaje y manipulación de componentes: soluciones remotas que permiten reducir maniobras de izaje y la exposición del personal durante trabajos críticos.","• Trabajos de mantenimiento en altura: plataformas y sistemas hidráulicos para facilitar labores de inspección, corte, esmerilado, soldadura y mantenimiento en zonas de difícil acceso."]',
-    1, 'Settings'
+    1, 'Settings', '/icons/soluciones-ingenieria-mineria.png'
   ),
   (
     'sistemas-lubricacion', '11', 'Sistemas de Lubricación',
@@ -163,7 +163,7 @@ INSERT OR REPLACE INTO categories (
     '#7C3AED', '#F5F3FF', 'Sistemas de Lubricación',
     'Diseño e implementación de sistemas y equipos de lubricación para minería e industria, desde soluciones automatizadas hasta proyectos desarrollados a medida, orientados a optimizar el suministro y control de lubricantes en equipos y procesos críticos.',
     '["• Camiones lubricadores: diseño y fabricación de camiones lubricadores para minería subterránea y de superficie, configurados para el almacenamiento, bombeo, filtración y suministro de aceites, grasas, refrigerantes y recuperación de aceite usado.","• Lubricación automática de equipos: sistemas progresivos y soluciones automatizadas para maquinaria móvil, orientados a suministrar lubricante de manera controlada en los diferentes puntos de lubricación.","• Sistemas de lubricación para molinos: soluciones de lubricación con aceite y sistemas de engrase automático para componentes críticos, incluyendo aplicaciones en catalinas de molinos.","• Bahías y estaciones de lubricación: diseño e implementación de instalaciones para almacenamiento, filtración, bombeo, despacho y control del consumo de lubricantes."]',
-    2, 'Activity'
+    2, 'Activity', '/icons/sistemas-lubricacion.png'
   ),
   (
     'soluciones-anti-desgaste', '12', 'Soluciones Anti Desgaste',
@@ -171,7 +171,7 @@ INSERT OR REPLACE INTO categories (
     '#B45309', '#FFFBEB', 'Soluciones Anti Desgaste',
     'Soluciones especializadas para proteger equipos y componentes sometidos a abrasión e impacto, mediante revestimientos, materiales y desarrollos a medida orientados a extender la vida útil y mejorar la disponibilidad de los equipos en minería e industria.',
     '["• Chutes y puntos de transferencia: revestimientos antidesgaste para zonas sometidas a abrasión, impacto y flujo continuo de mineral.","• Chancado y procesamiento de mineral: protección de componentes como Main Frame Liners, Skirt Liners, octógonos de chancado primario y otros elementos expuestos a desgaste severo.","• Equipos de movimiento de tierra: revestimientos y elementos de protección para baldes, palas, cargadores, excavadoras y bulldozers.","• Fabricaciones y revestimientos especiales: diseño de soluciones a medida mediante materiales bimetálicos, fundidos, cerámicos, caucho-cerámicos y elementos de alto impacto."]',
-    1, 'Shield'
+    1, 'Shield', '/icons/soluciones-anti-desgaste.png'
   );
 
 -- BROCHURES (20 PDFs reales)

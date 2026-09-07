@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.marco.totem',
-  appName: 'Totemarco',
+  appName: 'MARCO Explorer',
   webDir: 'dist'
 };
 

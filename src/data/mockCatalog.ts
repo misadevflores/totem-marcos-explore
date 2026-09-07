@@ -1,5 +1,33 @@
 import { Category, Brochure, Specialist, KioskSettings, Lead } from '../types';
 
+import iconLubIndustrial from '../../assets/icons/Lubricacion Industrial.png';
+import iconLubMinera from '../../assets/icons/Lubricación Minera.png';
+import iconHerramientas from '../../assets/icons/Herramientas HIdráulicas.png';
+import iconTransformacion from '../../assets/icons/Transformación de Materiales.png';
+import iconFiltracion from '../../assets/icons/Filtración Industrial.png';
+import iconMarcoLab from '../../assets/icons/Marco Lab.png';
+import iconMangueras from '../../assets/icons/Mangueras Oleo Hidráulicas.png';
+import iconComponentes from '../../assets/icons/Componentes y Sistemas Oleo Hidráulicos.png';
+import iconTransmision from '../../assets/icons/Transmisión de Potencia.png';
+import iconIngenieria from '../../assets/icons/Souciones de Ingeniería para Minería.png';
+import iconSistemasLub from '../../assets/icons/Sistemas de Lubricación.png';
+import iconAntiDesgaste from '../../assets/icons/Soluciones Antidesgaste.png';
+
+export const DEFAULT_CATEGORY_ICONS: Record<string, string> = {
+  'lubricacion-industrial': iconLubIndustrial,
+  'lubricacion-minera': iconLubMinera,
+  'herramientas-hidraulicas': iconHerramientas,
+  'transformacion-materiales': iconTransformacion,
+  'filtracion-industrial': iconFiltracion,
+  'marco-lab': iconMarcoLab,
+  'mangueras-oleo-hidraulicas': iconMangueras,
+  'componentes-oleo-hidraulicos': iconComponentes,
+  'transmision-potencia': iconTransmision,
+  'soluciones-ingenieria-mineria': iconIngenieria,
+  'sistemas-lubricacion': iconSistemasLub,
+  'soluciones-anti-desgaste': iconAntiDesgaste,
+};
+
 // Datos iniciales reales del catálogo MARCO (12 categorías, 20 PDFs, 12 especialistas)
 // Estos datos garantizan que en cualquier instalación limpia la app cargue inmediatamente con todo el catálogo.
 
@@ -35,7 +63,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Maquinaria y procesos industriales: soluciones para equipos de producciónsometidos a operación continua y condiciones exigentes."
     ],
     brochureCount: 2,
-    iconName: "Droplets"
+    iconName: "Droplets",
+    iconUrl: iconLubIndustrial
   },
   {
     id: "lubricacion-minera",
@@ -53,7 +82,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Equipos de planta concentradora: soluciones para bombas, motores, celdas de flotación y otros equipos críticos del proceso."
     ],
     brochureCount: 2,
-    iconName: "Droplets"
+    iconName: "Droplets",
+    iconUrl: iconLubMinera
   },
   {
     id: "herramientas-hidraulicas",
@@ -71,7 +101,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Torque y tensionado: herramientas hidráulicas para el ajuste y control preciso de uniones empernadas en aplicaciones críticas."
     ],
     brochureCount: 2,
-    iconName: "Wrench"
+    iconName: "Wrench",
+    iconUrl: iconHerramientas
   },
   {
     id: "transformacion-materiales",
@@ -89,7 +120,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Manejo de lodos: componentes y repuestos para bombas de lodos, incluyendo carcasas, rodetes y tapas en aleaciones anti-desgaste."
     ],
     brochureCount: 1,
-    iconName: "Boxes"
+    iconName: "Boxes",
+    iconUrl: iconTransformacion
   },
   {
     id: "filtracion-industrial",
@@ -107,7 +139,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Grupos electrógenos y sistemas industriales: tratamiento de combustibles y aceites para favorecer una operación continua y confiable."
     ],
     brochureCount: 2,
-    iconName: "Filter"
+    iconName: "Filter",
+    iconUrl: iconFiltracion
   },
   {
     id: "marco-lab",
@@ -125,7 +158,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Mantenimiento predictivo: generación de información para apoyar la toma de decisiones, anticipar fallas y optimizar los intervalos de mantenimiento."
     ],
     brochureCount: 2,
-    iconName: "FlaskConical"
+    iconName: "FlaskConical",
+    iconUrl: iconMarcoLab
   },
   {
     id: "mangueras-oleo-hidraulicas",
@@ -145,7 +179,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Soluciones y conjuntos para diferentes requerimientos de sistemas hidráulicos."
     ],
     brochureCount: 2,
-    iconName: "Zap"
+    iconName: "Zap",
+    iconUrl: iconMangueras
   },
   {
     id: "componentes-oleo-hidraulicos",
@@ -163,7 +198,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Unidades de potencia hidráulica (UPH): diseño e integración de sistemas con bombas, motores, válvulas, tanques, filtración y sistemas de control."
     ],
     brochureCount: 1,
-    iconName: "Settings"
+    iconName: "Settings",
+    iconUrl: iconComponentes
   },
   {
     id: "transmision-potencia",
@@ -181,7 +217,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Accionamientos de alto torque: soluciones para aplicaciones que requieren elevada capacidad de transmisión, incluyendo manejo de materiales, minería y equipos industriales de alta potencia."
     ],
     brochureCount: 2,
-    iconName: "Settings"
+    iconName: "Settings",
+    iconUrl: iconTransmision
   },
   {
     id: "soluciones-ingenieria-mineria",
@@ -199,7 +236,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Trabajos de mantenimiento en altura: plataformas y sistemas hidráulicos para facilitar labores de inspección, corte, esmerilado, soldadura y mantenimiento en zonas de difícil acceso."
     ],
     brochureCount: 1,
-    iconName: "Settings"
+    iconName: "Settings",
+    iconUrl: iconIngenieria
   },
   {
     id: "sistemas-lubricacion",
@@ -217,7 +255,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Bahías y estaciones de lubricación: diseño e implementación de instalaciones para almacenamiento, filtración, bombeo, despacho y control del consumo de lubricantes."
     ],
     brochureCount: 2,
-    iconName: "Activity"
+    iconName: "Activity",
+    iconUrl: iconSistemasLub
   },
   {
     id: "soluciones-anti-desgaste",
@@ -235,7 +274,8 @@ export const INITIAL_CATEGORIES: Category[] = [
       "• Fabricaciones y revestimientos especiales: diseño de soluciones a medida mediante materiales bimetálicos, fundidos, cerámicos, caucho-cerámicos y elementos de alto impacto."
     ],
     brochureCount: 1,
-    iconName: "Shield"
+    iconName: "Shield",
+    iconUrl: iconAntiDesgaste
   }
 ];
 

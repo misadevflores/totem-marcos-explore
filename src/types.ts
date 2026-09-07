@@ -10,6 +10,7 @@ export interface Category {
   applications: string[];
   brochureCount: number;
   iconName: string;
+  iconUrl?: string;
 }
 
 export interface Brochure {

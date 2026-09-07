@@ -19,7 +19,7 @@ export const BrochureLibraryView: React.FC<BrochureLibraryViewProps> = ({
 
   return (
     <div className="flex-1 w-full h-full flex flex-col justify-between bg-marco-bg text-brand-800 overflow-y-auto select-none p-6 md:p-8 lg:p-12">
-      <div className="w-full h-full flex flex-col justify-between max-w-[920px] mx-auto space-y-8">
+      <div className="w-full min-h-[100dvh] pb-32 flex flex-col justify-between max-w-[920px] mx-auto space-y-8">
         {/* Page Title Header */}
         <div className="space-y-4 text-left shrink-0">
           <div className="inline-block px-5 py-2 bg-brand-100 border border-brand-200 rounded-xl text-sm sm:text-base font-black text-brand-700">
