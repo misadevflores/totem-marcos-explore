@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -89,22 +90,46 @@ let dbType = 'sqlite';
 let sqliteDb;
 let mysqlPool;
 
+// ── Inicialización de Base de Datos (SQLite Local o MySQL Remoto) ────────────
 async function initDatabase() {
-  if (process.env.MYSQL_URL) {
+  const isMysqlConfigured = 
+    process.env.DB_TYPE === 'mysql' || 
+    Boolean(process.env.MYSQL_URL) || 
+    (process.env.MYSQL_HOST && process.env.MYSQL_DATABASE && process.env.MYSQL_USER && process.env.MYSQL_USER !== '');
+
+  if (isMysqlConfigured) {
     dbType = 'mysql';
-    console.log('[DB] Inicializando conexión a MySQL...');
-    mysqlPool = mysql.createPool(process.env.MYSQL_URL);
-    
+    console.log('[DB] Modo Online MySQL detectado. Conectando a base de datos remota...');
     try {
+      if (process.env.MYSQL_URL) {
+        mysqlPool = mysql.createPool({
+          uri: process.env.MYSQL_URL,
+          waitForConnections: true,
+          connectionLimit: 10,
+          ssl: process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined
+        });
+      } else {
+        mysqlPool = mysql.createPool({
+          host: process.env.MYSQL_HOST || 'localhost',
+          port: Number(process.env.MYSQL_PORT) || 3306,
+          user: process.env.MYSQL_USER || 'root',
+          password: process.env.MYSQL_PASSWORD || '',
+          database: process.env.MYSQL_DATABASE || 'totem_marco',
+          ssl: process.env.MYSQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+          waitForConnections: true,
+          connectionLimit: 10,
+          queueLimit: 0
+        });
+      }
+
+      // Verificar y auto-sembrar si la base remota es nueva
       const [tableCheck] = await mysqlPool.query("SHOW TABLES LIKE 'categories'");
       if (tableCheck.length === 0) {
-        console.info('[DB] Base de datos MySQL vacía. Ejecutando esquema inicial...');
+        console.info('[DB] Base de datos MySQL vacía. Creando tablas y sembrando datos iniciales...');
         const sqlFile = path.join(__dirname, 'sqlite.sql');
         if (fs.existsSync(sqlFile)) {
           let sqlContent = fs.readFileSync(sqlFile, 'utf8');
-          // Adaptar esquema SQLite básico a MySQL
           sqlContent = sqlContent.replace(/AUTOINCREMENT/g, 'AUTO_INCREMENT');
-          // Quitar instrucciones de SQLite
           sqlContent = sqlContent.replace(/BEGIN TRANSACTION;/gi, '');
           sqlContent = sqlContent.replace(/COMMIT;/gi, '');
           
@@ -114,62 +139,359 @@ async function initDatabase() {
                await mysqlPool.query(s);
              }
           }
-          console.info('[DB] Mapeo y ejecución de esquema inicial en MySQL completado.');
+          console.info('[DB] Esquema y catálogo sembrado en MySQL remoto con éxito.');
         }
       } else {
         const [rows] = await mysqlPool.query("SELECT count(*) as count FROM categories");
-        console.log(`[DB] MySQL activo con ${rows[0].count} categorías.`);
+        console.log(`[DB] Conectado a MySQL remoto con ${rows[0].count} categorías activas.`);
         try {
           await mysqlPool.query("ALTER TABLE categories ADD COLUMN icon_url TEXT");
         } catch {}
       }
+      return;
     } catch (err) {
-      console.error('[DB ERROR MYSQL]', err.message);
+      console.error('[DB ERROR MYSQL] Error conectando a MySQL remoto:', err.message);
+      console.warn('[DB] Alternando a modo SQLite local como respaldo de seguridad...');
     }
-  } else {
-    try {
-      const publicDir = path.dirname(DB_PATH);
-      if (!fs.existsSync(publicDir)) {
-        fs.mkdirSync(publicDir, { recursive: true });
-      }
+  }
 
-      sqliteDb = new Database(DB_PATH);
-      console.log('[DB] Conectado a totem-marco (SQLite local)');
-      
-      const tableCheck = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'").get();
-      let categoryCount = 0;
-      if (tableCheck) {
-        const row = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
-        categoryCount = row ? row.count : 0;
-        try {
-          sqliteDb.exec("ALTER TABLE categories ADD COLUMN icon_url TEXT;");
-        } catch {}
-      }
-
-      if (!tableCheck || categoryCount === 0) {
-        console.info('[DB] Base de datos vacía. Inicializando con sqlite.sql...');
-        const sqlFile = path.join(__dirname, 'sqlite.sql');
-        if (fs.existsSync(sqlFile)) {
-          const sqlContent = fs.readFileSync(sqlFile, 'utf8');
-          sqliteDb.exec(sqlContent);
-          const postCheck = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
-          console.info(`[DB] Datos iniciales de catálogo (${postCheck ? postCheck.count : 12} categorías) sembrados exitosamente.`);
-        }
-      } else {
-        console.log(`[DB] Base de datos SQLite activa con ${categoryCount} categorías.`);
-      }
-    } catch (err) {
-      console.error('[DB ERROR SQLITE]', err.message);
+  // Fallback / Modo por defecto: SQLite local
+  dbType = 'sqlite';
+  try {
+    const publicDir = path.dirname(DB_PATH);
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
     }
+
+    sqliteDb = new Database(DB_PATH);
+    console.log('[DB] Conectado a totem-marco (SQLite local)');
+    
+    const tableCheck = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'").get();
+    let categoryCount = 0;
+    if (tableCheck) {
+      const row = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
+      categoryCount = row ? row.count : 0;
+      try {
+        sqliteDb.exec("ALTER TABLE categories ADD COLUMN icon_url TEXT;");
+      } catch {}
+    }
+
+    if (!tableCheck || categoryCount === 0) {
+      console.info('[DB] Base de datos vacía. Inicializando con sqlite.sql...');
+      const sqlFile = path.join(__dirname, 'sqlite.sql');
+      if (fs.existsSync(sqlFile)) {
+        const sqlContent = fs.readFileSync(sqlFile, 'utf8');
+        sqliteDb.exec(sqlContent);
+        const postCheck = sqliteDb.prepare("SELECT count(*) as count FROM categories").get();
+        console.info(`[DB] Datos iniciales de catálogo (${postCheck ? postCheck.count : 12} categorías) sembrados exitosamente.`);
+      }
+    } else {
+      console.log(`[DB] Base de datos SQLite activa con ${categoryCount} categorías.`);
+    }
+  } catch (err) {
+    console.error('[DB ERROR SQLITE]', err.message);
   }
 }
 
 initDatabase();
 
-// Health check
+// ── Servicio de Envío de Correos SMTP (Nodemailer) ──────────────────────────
+function createMailTransporter() {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass || user.trim() === '' || pass.trim() === '') {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+}
+
+// Helper para localizar el archivo PDF físico en disco
+function findPdfOnDisk(rawUrl, brochureTitle, categoryId) {
+  if (!rawUrl) return null;
+
+  let cleanPath = decodeURIComponent(rawUrl).replace(/^[./]+/, '');
+
+  // 1. Probar ruta directa desde raíz
+  const directPath = path.join(__dirname, cleanPath);
+  if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+    return directPath;
+  }
+
+  // 2. Probar en public/
+  const publicPath = path.join(__dirname, 'public', cleanPath);
+  if (fs.existsSync(publicPath) && fs.statSync(publicPath).isFile()) {
+    return publicPath;
+  }
+
+  // 3. Probar en public/pdfs/
+  const baseName = path.basename(cleanPath);
+  const pdfsDirMatch = path.join(PDFS_DIR, baseName);
+  if (fs.existsSync(pdfsDirMatch) && fs.statSync(pdfsDirMatch).isFile()) {
+    return pdfsDirMatch;
+  }
+
+  // 4. Probar en catalogo_pdfs/
+  const catalogoMatch = path.join(CATALOGO_PDFS_DIR, cleanPath.replace(/^catalogo_pdfs\//, ''));
+  if (fs.existsSync(catalogoMatch) && fs.statSync(catalogoMatch).isFile()) {
+    return catalogoMatch;
+  }
+
+  // 5. Búsqueda en subdirectorios de catalogo_pdfs/
+  if (fs.existsSync(CATALOGO_PDFS_DIR)) {
+    const subdirs = fs.readdirSync(CATALOGO_PDFS_DIR);
+    for (const dir of subdirs) {
+      const fullSub = path.join(CATALOGO_PDFS_DIR, dir);
+      if (fs.statSync(fullSub).isDirectory()) {
+        const candidate = path.join(fullSub, baseName);
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  // 6. Probar en assets/pdf/
+  const assetsPdf = path.join(__dirname, 'assets', 'pdf', baseName);
+  if (fs.existsSync(assetsPdf) && fs.statSync(assetsPdf).isFile()) {
+    return assetsPdf;
+  }
+
+  return null;
+}
+
+// Generador de plantilla HTML corporativa de MARCO Peruana
+function generateEmailHtml({ fullName, brochureTitle, categoryName, company, downloadUrl, hasAttachment }) {
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brochure Técnico MARCO</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f1f5f9; padding: 30px 10px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card -->
+        <table role="presentation" width="100%" max-width="600" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #001A3A 0%, #003067 100%); padding: 36px 30px; text-align: center;">
+              <h1 style="color: #ffffff; font-size: 26px; font-weight: 800; margin: 0; letter-spacing: 1px; text-transform: uppercase;">
+                MARCO EXPLORER
+              </h1>
+              <p style="color: #93c5fd; font-size: 13px; margin: 6px 0 0 0; letter-spacing: 0.5px; font-weight: 600;">
+                Soluciones de Ingeniería, Lubricación y Minería
+              </p>
+            </td>
+          </tr>
+
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 36px 30px;">
+              <p style="font-size: 17px; font-weight: 700; color: #0f172a; margin: 0 0 16px 0;">
+                Estimado(a) ${fullName || 'Cliente'},
+              </p>
+
+              <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 24px 0;">
+                Gracias por visitarnos en nuestro tótem interactivo. A continuación te compartimos la información técnica y catálogo que solicitaste:
+              </p>
+
+              <!-- Brochure Highlight Box -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f8fafc; border-left: 5px solid #003067; border-radius: 12px; padding: 20px; margin-bottom: 26px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
+                <tr>
+                  <td>
+                    <span style="display: inline-block; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #003067; letter-spacing: 0.5px; margin-bottom: 4px;">
+                      DOCUMENTO SOLICITADO
+                    </span>
+                    <h3 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 4px 0 6px 0;">
+                      ${brochureTitle}
+                    </h3>
+                    <p style="font-size: 13px; color: #64748b; margin: 0;">
+                      Categoría: <strong style="color: #334155;">${categoryName || 'Soluciones MARCO'}</strong>
+                      ${company ? `<br>Empresa: <strong style="color: #334155;">${company}</strong>` : ''}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              ${hasAttachment ? `
+              <p style="font-size: 14px; line-height: 1.5; color: #059669; font-weight: 700; margin: 0 0 20px 0; padding: 12px 16px; background-color: #ecfdf5; border-radius: 10px; border: 1px solid #a7f3d0;">
+                📎 Hemos adjuntado el archivo PDF directamente a este correo electrónico para que puedas consultarlo sin conexión.
+              </p>
+              ` : ''}
+
+              ${downloadUrl ? `
+              <!-- CTA Download Button -->
+              <div style="text-align: center; margin: 28px 0 24px 0;">
+                <a href="${downloadUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #FF6B00 0%, #EA580C 100%); color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 800; padding: 16px 32px; border-radius: 12px; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35); text-transform: uppercase; letter-spacing: 0.5px;">
+                  Abrir / Descargar PDF en línea
+                </a>
+              </div>
+              ` : ''}
+
+              <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 24px 0 0 0;">
+                Uno de nuestros especialistas técnicos se pondrá en contacto contigo si requieres asesoría personalizada, cotización de equipos o soporte en planta.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 24px 30px; text-align: center;">
+              <p style="font-size: 13px; font-weight: 700; color: #003067; margin: 0 0 6px 0;">
+                MARCO PERUANA S.A.
+              </p>
+              <p style="font-size: 12px; color: #64748b; margin: 0 0 10px 0;">
+                Av. Elmer Faucett 5270, Callao - Lima, Perú · Tel: +51 1 614-2222
+              </p>
+              <p style="font-size: 12px; margin: 0;">
+                <a href="https://marco.com.pe" target="_blank" style="color: #003067; font-weight: 700; text-decoration: none;">www.marco.com.pe</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+}
+
+// ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   const dbStatus = (dbType === 'mysql' ? (mysqlPool ? 'connected' : 'disconnected') : (sqliteDb ? 'connected' : 'disconnected'));
-  res.json({ status: 'ok', dbType, dbStatus, message: 'Backend conectado' });
+  const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  res.json({ 
+    status: 'ok', 
+    dbType, 
+    dbStatus, 
+    smtpConfigured,
+    message: 'Backend conectado' 
+  });
+});
+
+// ── Endpoint para Envío de PDFs por Correo Electrónico ─────────────────────────
+app.post('/api/send-pdf-email', async (req, res) => {
+  try {
+    const { 
+      email, 
+      fullName = 'Cliente', 
+      brochureTitle = 'Brochure MARCO', 
+      brochureId,
+      categoryId, 
+      categoryName = 'Soluciones Técnicas',
+      pdfUrl, 
+      company = '',
+      phone = '',
+      position = ''
+    } = req.body;
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Dirección de correo electrónico inválida.' });
+    }
+
+    console.log(`[EMAIL] Solicitud de envío de PDF para: ${email} (${brochureTitle})`);
+
+    // 1. Localizar archivo PDF en disco
+    const pdfFilePath = findPdfOnDisk(pdfUrl, brochureTitle, categoryId);
+    let hasAttachment = false;
+    const attachments = [];
+
+    if (pdfFilePath && fs.existsSync(pdfFilePath)) {
+      const stats = fs.statSync(pdfFilePath);
+      console.log(`[EMAIL] PDF encontrado en disco: ${pdfFilePath} (${(stats.size / (1024 * 1024)).toFixed(2)} MB)`);
+      
+      // Adjuntar si el archivo es <= 25MB (estándar seguro SMTP)
+      if (stats.size <= 25 * 1024 * 1024) {
+        const safeAttachmentName = `${brochureTitle.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]/g, '_')}.pdf`;
+        attachments.push({
+          filename: safeAttachmentName,
+          path: pdfFilePath,
+          contentType: 'application/pdf'
+        });
+        hasAttachment = true;
+      } else {
+        console.warn(`[EMAIL] PDF excede 25MB (${(stats.size / (1024 * 1024)).toFixed(2)} MB). Se enviará como enlace de descarga.`);
+      }
+    } else {
+      console.warn(`[EMAIL] Archivo PDF físico no localizado directamente en disco para ${pdfUrl}.`);
+    }
+
+    // 2. Construir enlace de descarga directa
+    const publicAppUrl = process.env.PUBLIC_APP_URL || '';
+    let downloadUrl = '';
+    if (pdfUrl) {
+      if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
+        downloadUrl = pdfUrl;
+      } else if (publicAppUrl) {
+        downloadUrl = `${publicAppUrl.replace(/\/+$/, '')}/${pdfUrl.replace(/^[./]+/, '')}`;
+      }
+    }
+
+    // 3. Crear transporter de correo
+    const transporter = createMailTransporter();
+    if (!transporter) {
+      console.warn('[EMAIL] Servicio SMTP no configurado en .env (SMTP_USER / SMTP_PASS vacíos). Simulando despacho exitoso.');
+      return res.json({
+        success: true,
+        mock: true,
+        configured: false,
+        message: 'Requerimiento registrado. Para envío de correo real, configure SMTP_USER y SMTP_PASS en el archivo .env',
+        hasAttachment
+      });
+    }
+
+    // 4. Armar y enviar correo
+    const fromAddress = process.env.SMTP_FROM || `"MARCO Explorer" <${process.env.SMTP_USER}>`;
+    const emailSubject = `Brochure Técnico MARCO: ${brochureTitle}`;
+    const emailHtml = generateEmailHtml({
+      fullName,
+      brochureTitle,
+      categoryName,
+      company,
+      downloadUrl,
+      hasAttachment
+    });
+
+    const info = await transporter.sendMail({
+      from: fromAddress,
+      to: email,
+      subject: emailSubject,
+      html: emailHtml,
+      attachments
+    });
+
+    console.log(`[EMAIL] Correo enviado exitosamente a ${email}. MessageId: ${info.messageId}`);
+    res.json({
+      success: true,
+      configured: true,
+      messageId: info.messageId,
+      hasAttachment,
+      message: 'PDF enviado exitosamente al correo.'
+    });
+
+  } catch (err) {
+    console.error('[EMAIL ERROR]', err.message);
+    res.status(500).json({ error: 'Error al enviar el correo: ' + err.message });
+  }
 });
 
 // Endpoint para restaurar catálogo por defecto
@@ -264,7 +586,6 @@ app.post('/api/upload-icon', (req, res) => {
 // Helper para adaptar consultas SQLite a MySQL
 function adaptSqlForMysql(sql) {
   if (dbType === 'mysql') {
-    // Reemplazar INSERT OR REPLACE INTO por REPLACE INTO
     return sql.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'REPLACE INTO');
   }
   return sql;
@@ -280,7 +601,6 @@ app.post('/api/sync-upload', async (req, res) => {
       try {
         await connection.beginTransaction();
         
-        // Sincronizar leads
         for (const lead of leads) {
           const l = lead;
           const sql = `REPLACE INTO leads (
@@ -298,7 +618,6 @@ app.post('/api/sync-upload', async (req, res) => {
           ]);
         }
 
-        // Sincronizar stats
         for (const stat of stats) {
           const sql = `INSERT INTO stats (key, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = GREATEST(value, ?)`;
           await connection.execute(sql, [stat.key, stat.value, stat.value]);
@@ -477,26 +796,22 @@ app.post('/api/import-db', (req, res) => {
 
     console.log('[DB] Importando base de datos...');
     
-    // Close current connection
     if (sqliteDb) {
       sqliteDb.close();
       console.log('[DB] Conexión actual cerrada.');
     }
 
-    // Write new file
     const base64Clean = base64Data.replace(/^data:application\/(x-sqlite3|octet-stream);base64,/, '').replace(/^data:.*;base64,/, '');
     const buffer = Buffer.from(base64Clean, 'base64');
     fs.writeFileSync(DB_PATH, buffer);
     console.log(`[DB] Nuevo archivo guardado en disco (${buffer.length} bytes).`);
 
-    // Re-instantiate connection
     sqliteDb = new Database(DB_PATH);
     console.log('[DB] Conexión re-establecida exitosamente.');
 
     res.json({ success: true, message: 'Base de datos importada correctamente' });
   } catch (err) {
     console.error('[DB IMPORT ERROR]', err.message);
-    // Intentar reconectar si falló a mitad de camino
     try {
       if (dbType === 'sqlite' && (!sqliteDb || !sqliteDb.open)) sqliteDb = new Database(DB_PATH);
     } catch (e) {
@@ -506,9 +821,9 @@ app.post('/api/import-db', (req, res) => {
   }
 });
 
-// Fallback SPA para todas las demás rutas (permite recargar páginas en React Router / cliente)
+// Fallback SPA para todas las demás rutas
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/pdfs') || req.path.startsWith('/catalogo_pdfs')) {
+  if (req.path.startsWith('/api') || req.path.startsWith('/pdfs') || req.path.startsWith('/catalogo_pdfs') || req.path.startsWith('/icons')) {
     return next();
   }
   const indexPath = path.join(DIST_DIR, 'index.html');
@@ -533,4 +848,3 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[SERVER] Escuchando en http://0.0.0.0:${PORT}`);
   console.log(`[DB PATH] ${DB_PATH} (Modo: ${dbType})`);
 });
-
