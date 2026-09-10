@@ -28,6 +28,11 @@ async function getCachedPdfDocument(url: string) {
 // Caché de imágenes renderizadas para acceso instantáneo
 const renderCache = new Map<string, string>();
 
+export const clearPdfCaches = () => {
+  docCache.clear();
+  renderCache.clear();
+};
+
 interface PdfPageCanvasProps {
   pdfUrl: string;
   pageNumber: number;
@@ -73,8 +78,8 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom,
         const availableWidth = Math.max(280, containerRef.current.clientWidth - 32);
         const scale = Math.max(0.5, (availableWidth / baseViewport.width) * zoom);
         
-        // Optimizar calidad vs rendimiento con devicePixelRatio (capeado a 1.5 para mejor rendimiento)
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+        // Optimizar calidad vs rendimiento con devicePixelRatio (capeado a 1 para evitar excesivo uso de RAM en tótems)
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1);
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
@@ -163,6 +168,12 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   onSendToEmail,
   onRequestSpecialist
 }) => {
+  useEffect(() => {
+    // Al desmontar el modal, limpiamos la caché de PDFs para liberar memoria del tótem
+    return () => {
+      clearPdfCaches();
+    };
+  }, []);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(1);
   const totalPages = brochure.pages || 16;
@@ -328,6 +339,16 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
                   <QrIcon className="w-4 h-4" />
                   <span>Código QR</span>
                 </button>
+                <a
+                  href={qrTargetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-amber-300 hover:bg-slate-700"
+                  title="Abrir PDF en una pestaña externa (alternativa si falla la carga)"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Abrir PDF</span>
+                </a>
                 <button
                   type="button"
                   onClick={() => {
