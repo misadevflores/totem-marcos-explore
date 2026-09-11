@@ -69,7 +69,43 @@ const CATALOGO_PDFS_DIR = path.join(__dirname, 'catalogo_pdfs');
 if (!fs.existsSync(CATALOGO_PDFS_DIR)) {
   fs.mkdirSync(CATALOGO_PDFS_DIR, { recursive: true });
 }
-app.use('/catalogo_pdfs', express.static(CATALOGO_PDFS_DIR, {
+app.use('/catalogo_pdfs', (req, res, next) => {
+  if (req.path === '/') return next();
+  
+  const decodedPath = decodeURIComponent(req.path);
+  const exactPath = path.join(CATALOGO_PDFS_DIR, decodedPath);
+  
+  if (!fs.existsSync(exactPath)) {
+    // Buscar la ruta de forma insensible a mayúsculas/minúsculas y espacios/guiones bajos
+    const parts = decodedPath.split('/').filter(Boolean);
+    let currentDir = CATALOGO_PDFS_DIR;
+    let valid = true;
+    
+    for (const part of parts) {
+      if (!fs.existsSync(currentDir)) {
+        valid = false;
+        break;
+      }
+      const files = fs.readdirSync(currentDir);
+      const matchedFile = files.find(f => 
+        f.toLowerCase().replace(/ /g, '_') === part.toLowerCase().replace(/ /g, '_')
+      );
+      
+      if (matchedFile) {
+        currentDir = path.join(currentDir, matchedFile);
+      } else {
+        valid = false;
+        break;
+      }
+    }
+    
+    if (valid) {
+      // Reescribir la URL para que coincida exactamente con la ruta física
+      req.url = '/' + path.relative(CATALOGO_PDFS_DIR, currentDir).split(path.sep).join('/');
+    }
+  }
+  next();
+}, express.static(CATALOGO_PDFS_DIR, {
   setHeaders: (res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Cache-Control', 'public, max-age=86400');

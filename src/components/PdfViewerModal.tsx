@@ -8,147 +8,15 @@ import { QrCodeCard } from './QrCodeCard';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-const docCache = new Map<string, any>();
-
-async function getCachedPdfDocument(url: string) {
-  const safeUrl = encodeURI(decodeURI(url));
-  if (docCache.has(safeUrl)) return docCache.get(safeUrl);
-  
-  const loadingTask = getDocument({
-    url: safeUrl,
-    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/cmaps/',
-    cMapPacked: true,
-    standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/standard_fonts/',
-  });
-  const doc = await loadingTask.promise;
-  docCache.set(url, doc);
-  return doc;
-}
-
-// Caché de imágenes renderizadas para acceso instantáneo
-const renderCache = new Map<string, string>();
-
-export const clearPdfCaches = () => {
-  docCache.clear();
-  renderCache.clear();
-};
-
-interface PdfPageCanvasProps {
-  pdfUrl: string;
-  pageNumber: number;
-  zoom: number;
-  title: string;
-}
-
-const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({ pdfUrl, pageNumber, zoom, title }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [renderedPage, setRenderedPage] = useState<number | null>(null);
-  const [cachedImage, setCachedImage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let renderTask: { cancel: () => void; promise: Promise<unknown> } | undefined;
-
-    const cacheKey = `${pdfUrl}_${pageNumber}_${zoom}`;
-    if (renderCache.has(cacheKey)) {
-      setCachedImage(renderCache.get(cacheKey)!);
-      setStatus('ready');
-      setRenderedPage(pageNumber);
-      return;
-    }
-
-    setStatus('loading');
-    setCachedImage(null);
-
-    getCachedPdfDocument(pdfUrl)
-      .then(async (pdf) => {
-        if (cancelled) return;
-        
-        // Pre-fetch next page in background to speed up subsequent navigation
-        if (pageNumber < pdf.numPages) {
-          pdf.getPage(pageNumber + 1).catch(() => {});
-        }
-
-        const page = await pdf.getPage(pageNumber);
-        if (cancelled || !canvasRef.current || !containerRef.current) return;
-
-        const baseViewport = page.getViewport({ scale: 1 });
-        const availableWidth = Math.max(280, containerRef.current.clientWidth - 32);
-        const scale = Math.max(0.5, (availableWidth / baseViewport.width) * zoom);
-        
-        // Optimizar calidad vs rendimiento con devicePixelRatio (capeado a 1 para evitar excesivo uso de RAM en tótems)
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1);
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
-        if (!context) throw new Error('No se pudo preparar el canvas del PDF.');
-
-        canvas.width = viewport.width * pixelRatio;
-        canvas.height = viewport.height * pixelRatio;
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        
-        // Normalizar la escala del contexto para soporte de pantallas Retina
-        context.scale(pixelRatio, pixelRatio);
-
-        renderTask = page.render({ canvas, canvasContext: context, viewport });
-        await renderTask.promise;
-        
-        if (!cancelled) {
-          try {
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            renderCache.set(cacheKey, dataUrl);
-            setCachedImage(dataUrl);
-          } catch (e) {
-            // Ignorar errores de toDataURL (p. ej. por seguridad CORS en algunos entornos)
-          }
-          setStatus('ready');
-          setRenderedPage(pageNumber);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled && (error as { name?: string }).name !== 'RenderingCancelledException') {
-          console.warn('[PDF Render]', error);
-          setStatus('error');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      renderTask?.cancel();
-    };
-  }, [pageNumber, pdfUrl, zoom]);
-
-  // Si estamos cargando pero ya tenemos una página renderizada, mantenemos su visibilidad (opacidad reducida)
-  // para evitar el "parpadeo blanco" al cambiar de página.
-  const isTransitioning = status === 'loading' && renderedPage !== null;
-
+const NativePdfViewer: React.FC<{ pdfUrl: string, title: string }> = ({ pdfUrl, title }) => {
   return (
-    <div ref={containerRef} className="relative flex min-h-full min-w-full items-start justify-center p-4">
-      {status !== 'ready' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center">
-          <div className="bg-slate-900/80 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-xl backdrop-blur-sm animate-pulse">
-            {status === 'loading' ? 'Cargando página...' : 'Error al cargar página.'}
-          </div>
-        </div>
-      )}
-      {cachedImage && status === 'ready' ? (
-        <img 
-          src={cachedImage} 
-          alt={`Página ${pageNumber} de ${title}`}
-          className="bg-white shadow-2xl animate-in fade-in duration-150"
-        />
-      ) : (
-        <canvas
-          ref={canvasRef}
-          aria-label={`Página ${pageNumber} de ${title}`}
-          className={`bg-white shadow-2xl transition-opacity duration-150 ${
-            status === 'ready' ? 'opacity-100' : isTransitioning ? 'opacity-40 blur-[2px]' : 'opacity-0'
-          }`}
-        />
-      )}
+    <div className="w-full h-full min-h-[600px] flex items-center justify-center">
+      <iframe
+        src={pdfUrl}
+        title={`PDF Viewer - ${title}`}
+        className="w-full h-full border-0 bg-white rounded-xl"
+        style={{ minHeight: '60vh' }}
+      />
     </div>
   );
 };
@@ -161,6 +29,10 @@ interface PdfViewerModalProps {
   onRequestSpecialist: (brochure: Brochure) => void;
 }
 
+export const clearPdfCaches = () => {
+  // Ya no usamos caché manual de pdfjs
+};
+
 export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   brochure,
   category,
@@ -169,7 +41,6 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
   onRequestSpecialist
 }) => {
   useEffect(() => {
-    // Al desmontar el modal, limpiamos la caché de PDFs para liberar memoria del tótem
     return () => {
       clearPdfCaches();
     };
@@ -293,11 +164,9 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
         <div className="w-full max-w-5xl h-full min-h-[320px] bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col">
           <div className="flex-1 min-h-0 overflow-auto bg-slate-700 p-2 md:p-5 flex justify-center">
             {hasPdf ? (
-              <PdfPageCanvas
+              <NativePdfViewer
                 key={brochure.pdfUrl}
                 pdfUrl={brochure.pdfUrl!}
-                pageNumber={currentPage}
-                zoom={zoom}
                 title={brochure.title}
               />
             ) : currentImageUrl ? (
@@ -316,19 +185,21 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
             )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 border-t border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
-            <>
-              <button onClick={() => setZoom(Math.max(0.75, zoom - 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Alejar">
-                <ZoomOut className="h-5 w-5" />
-              </button>
-              <span className="min-w-16 text-center font-semibold">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(Math.min(2.5, zoom + 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Acercar">
-                <ZoomIn className="h-5 w-5" />
-              </button>
-              <button onClick={() => setZoom(1)} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Restablecer zoom">
-                <RotateCcw className="h-5 w-5" />
-              </button>
-            </>
-            <span className="font-semibold">Página {currentPage} de {totalPages}</span>
+            {!hasPdf && (
+              <>
+                <button onClick={() => setZoom(Math.max(0.75, zoom - 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Alejar">
+                  <ZoomOut className="h-5 w-5" />
+                </button>
+                <span className="min-w-16 text-center font-semibold">{Math.round(zoom * 100)}%</span>
+                <button onClick={() => setZoom(Math.min(2.5, zoom + 0.25))} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Acercar">
+                  <ZoomIn className="h-5 w-5" />
+                </button>
+                <button onClick={() => setZoom(1)} className="p-2 rounded-lg hover:bg-slate-700" aria-label="Restablecer zoom">
+                  <RotateCcw className="h-5 w-5" />
+                </button>
+                <span className="font-semibold">Página {currentPage} de {totalPages}</span>
+              </>
+            )}
             {hasPdf && (
               <>
                 <button
@@ -377,30 +248,32 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
 
       {/* Bottom Action Toolbar */}
       <div className="shrink-0 bg-slate-900 border-t border-slate-800 px-3 py-2.5 md:px-4 md:py-3 space-y-2">
-        {/* Navigation Page Controls */}
-        <div className="flex items-center justify-center gap-2 md:gap-3 max-w-xl mx-auto">
-          <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage <= 1}
-            className="flex-1 min-w-0 py-2.5 px-2 md:px-4 min-h-[48px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white font-bold rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 md:gap-2 text-sm md:text-base transition shadow"
-          >
-            <ChevronLeft className="w-5 h-5 shrink-0" />
-            <span>ANTERIOR</span>
-          </button>
+        {/* Navigation Page Controls (Disabled for Native Viewer) */}
+        {!hasPdf && (
+          <div className="flex items-center justify-center gap-2 md:gap-3 max-w-xl mx-auto">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1}
+              className="flex-1 min-w-0 py-2.5 px-2 md:px-4 min-h-[48px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white font-bold rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 md:gap-2 text-sm md:text-base transition shadow"
+            >
+              <ChevronLeft className="w-5 h-5 shrink-0" />
+              <span>ANTERIOR</span>
+            </button>
 
-          <span className="shrink-0 text-xs md:text-sm font-bold text-slate-300 px-2.5 md:px-3 py-2 bg-slate-800 rounded-lg border border-slate-700 font-mono">
-            {currentPage} / {totalPages}
-          </span>
+            <span className="shrink-0 text-xs md:text-sm font-bold text-slate-300 px-2.5 md:px-3 py-2 bg-slate-800 rounded-lg border border-slate-700 font-mono">
+              {currentPage} / {totalPages}
+            </span>
 
-          <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage >= totalPages}
-            className="flex-1 min-w-0 py-2.5 px-2 md:px-4 min-h-[48px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white font-bold rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 md:gap-2 text-sm md:text-base transition shadow"
-          >
-            <span>SIGUIENTE</span>
-            <ChevronRight className="w-5 h-5 shrink-0" />
-          </button>
-        </div>
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+              className="flex-1 min-w-0 py-2.5 px-2 md:px-4 min-h-[48px] bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white font-bold rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 md:gap-2 text-sm md:text-base transition shadow"
+            >
+              <span>SIGUIENTE</span>
+              <ChevronRight className="w-5 h-5 shrink-0" />
+            </button>
+          </div>
+        )}
 
         {/* Primary Call to Action Buttons */}
         <div className="grid grid-cols-2 items-stretch gap-3 md:gap-4 max-w-xl mx-auto pt-1">
